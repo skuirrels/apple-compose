@@ -1,0 +1,36 @@
+name: basicdemo
+services:
+  web:
+    image: python:3.12-alpine
+    command: python3 -u -m http.server 8000
+    ports:
+      - "18090:8000"
+    environment:
+      DB_HOST: db
+      GREETING: ${GREETING:-hello}
+    depends_on:
+      db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - ./site:/site:ro
+      - data:/data
+    working_dir: /site
+    labels:
+      demo: "true"
+  db:
+    image: alpine:3.20
+    command: sh -c "while true; do sleep 1; done"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -f /tmp/ready || (touch /tmp/ready; exit 1)"]
+      interval: 2s
+      retries: 5
+    networks:
+      default:
+        aliases: [database]
+  init:
+    image: alpine:3.20
+    command: sh -c "echo init done"
+volumes:
+  data: {}

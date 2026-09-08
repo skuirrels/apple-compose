@@ -1,0 +1,8 @@
+name: oneshot
+services:
+  task:
+    image: alpine:3.20
+    command: sh -c "echo working; sleep 2; echo done; exit 7"
+  sidecar:
+    image: alpine:3.20
+    command: sh -c "while true; do echo tick; sleep 1; done"
