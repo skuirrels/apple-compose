@@ -157,3 +157,17 @@ services:
 		t.Errorf("quiet must not reach the runtime: %s", build)
 	}
 }
+
+func TestEmptyVolumeUsesServicePlatform(t *testing.T) {
+	r, _ := loadRunner(t, "name: t\nservices:\n  sql:\n    image: mcr.microsoft.com/mssql/server:2022-latest\n    platform: linux/amd64\n    volumes: [\"data:/var/opt/mssql\"]\nvolumes:\n  data: {}\n", nil)
+	f := withFake(t, r)
+	f.On("image inspect", `[{"id":"x","configuration":{"name":"mcr.microsoft.com/mssql/server:2022-latest"}}]`, 0)
+	f.On("volume inspect", "Error: not found", 1)
+	if err := r.EnsureVolumes(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := f.Call("run --rm")
+	if !strings.Contains(got, "--user 0:0") || !strings.Contains(got, "--platform linux/amd64 --entrypoint /bin/sh mcr.microsoft.com/mssql/server:2022-latest -c ") || !strings.HasSuffix(got, " sh /.apple-compose-volume /var/opt/mssql") {
+		t.Fatalf("emptying must run as root on the image's platform and chown to the mount point's owner: %q", got)
+	}
+}

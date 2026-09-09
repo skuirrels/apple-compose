@@ -172,10 +172,10 @@ services:
   c:
     image: img
 `, nil)
-	if got := argsFor(t, r, "a"); !strings.HasSuffix(got, "img --entrypoint /bin/sh -c echo hi") {
+	if got := argsFor(t, r, "a"); !strings.HasSuffix(got, "--entrypoint /bin/sh img -c echo hi") {
 		t.Errorf("a: %s", got)
 	}
-	if got := argsFor(t, r, "b"); !strings.HasSuffix(got, "img --entrypoint python app.py") {
+	if got := argsFor(t, r, "b"); !strings.HasSuffix(got, "--entrypoint python img app.py") {
 		t.Errorf("b: %s", got)
 	}
 	if got := argsFor(t, r, "c"); !strings.HasSuffix(got, " img") {
@@ -341,5 +341,13 @@ func TestDefaultResourcesFromEnvironment(t *testing.T) {
 	}
 	if got := argsFor(t, r, "b"); !strings.Contains(got, "--memory 512M") || !strings.Contains(got, "--cpus 1") || strings.Contains(got, "4g") {
 		t.Fatalf("explicit limits must win: %s", got)
+	}
+}
+
+func TestEntrypointFlagPrecedesImage(t *testing.T) {
+	r, _ := loadRunner(t, "name: t\nservices:\n  a:\n    image: img\n    entrypoint: [/bin/bash, /init.sh]\n    command: [--flag]\n", nil)
+	got := argsFor(t, r, "a")
+	if !strings.HasSuffix(got, "--entrypoint /bin/bash img /init.sh --flag") {
+		t.Fatalf("entrypoint flag must come before the image and its extra words after it: %s", got)
 	}
 }

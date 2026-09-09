@@ -312,10 +312,13 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	if spec.command != nil {
 		command = spec.command
 	}
-	cmdArgs, err := processArgs(entrypoint, command, spec.entrypoint != nil || s.Entrypoint != nil)
+	flags, cmdArgs, err := processArgs(entrypoint, command, spec.entrypoint != nil || s.Entrypoint != nil)
 	if err != nil {
 		return nil, fmt.Errorf("service %s: %w", s.Name, err)
 	}
+	// The runtime parses options only before the image; everything after it
+	// is the process's argument list.
+	add(flags...)
 	add(project.ImageName(p, s))
 	add(cmdArgs...)
 	return args, nil
@@ -324,25 +327,25 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 // processArgs maps compose entrypoint/command onto the runtime's flags, which
 // follow Docker's rules: an explicit entrypoint discards the image CMD, and
 // the runtime cannot express an empty entrypoint override, so an explicitly
-// empty entrypoint promotes the first command word instead.
-func processArgs(entrypoint, command []string, entrypointSet bool) ([]string, error) {
-	var args []string
+// empty entrypoint promotes the first command word instead. flags go before
+// the image on the command line and args after it.
+func processArgs(entrypoint, command []string, entrypointSet bool) (flags, args []string, err error) {
 	switch {
 	case len(entrypoint) > 0:
-		args = append(args, "--entrypoint", entrypoint[0])
+		flags = []string{"--entrypoint", entrypoint[0]}
 		args = append(args, entrypoint[1:]...)
 		args = append(args, command...)
 	case entrypointSet && entrypoint != nil && len(entrypoint) == 0:
 		// entrypoint: [] clears the image entrypoint.
 		if len(command) == 0 {
-			return nil, fmt.Errorf("entrypoint is cleared but no command is set")
+			return nil, nil, fmt.Errorf("entrypoint is cleared but no command is set")
 		}
-		args = append(args, "--entrypoint", command[0])
+		flags = []string{"--entrypoint", command[0]}
 		args = append(args, command[1:]...)
 	default:
 		args = append(args, command...)
 	}
-	return args, nil
+	return flags, args, nil
 }
 
 func dependsOnLabel(s types.ServiceConfig) string {

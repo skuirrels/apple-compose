@@ -13,24 +13,25 @@ func TestProcessArgs(t *testing.T) {
 		entrypoint []string
 		set        bool
 		command    []string
+		wantFlags  []string
 		want       []string
 		wantErr    bool
 	}{
-		{"command only", nil, false, []string{"echo", "hi"}, []string{"echo", "hi"}, false},
-		{"nothing", nil, false, nil, nil, false},
-		{"entrypoint list", []string{"/bin/sh", "-c"}, true, []string{"echo hi"}, []string{"--entrypoint", "/bin/sh", "-c", "echo hi"}, false},
-		{"entrypoint only", []string{"/app/run"}, true, nil, []string{"--entrypoint", "/app/run"}, false},
-		{"cleared entrypoint", []string{}, true, []string{"python", "app.py"}, []string{"--entrypoint", "python", "app.py"}, false},
-		{"cleared entrypoint without command", []string{}, true, nil, nil, true},
+		{"command only", nil, false, []string{"echo", "hi"}, nil, []string{"echo", "hi"}, false},
+		{"nothing", nil, false, nil, nil, nil, false},
+		{"entrypoint list", []string{"/bin/sh", "-c"}, true, []string{"echo hi"}, []string{"--entrypoint", "/bin/sh"}, []string{"-c", "echo hi"}, false},
+		{"entrypoint only", []string{"/app/run"}, true, nil, []string{"--entrypoint", "/app/run"}, nil, false},
+		{"cleared entrypoint", []string{}, true, []string{"python", "app.py"}, []string{"--entrypoint", "python"}, []string{"app.py"}, false},
+		{"cleared entrypoint without command", []string{}, true, nil, nil, nil, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := processArgs(tc.entrypoint, tc.command, tc.set)
+			flags, got, err := processArgs(tc.entrypoint, tc.command, tc.set)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
 			}
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("got %v, want %v", got, tc.want)
+			if !reflect.DeepEqual(flags, tc.wantFlags) || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v %v, want %v %v", flags, got, tc.wantFlags, tc.want)
 			}
 		})
 	}

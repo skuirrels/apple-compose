@@ -119,18 +119,24 @@ func (r *Runner) EnsureVolumes(ctx context.Context) error {
 	return nil
 }
 
-// emptyVolume removes the lost+found directory a fresh ext4 volume image
-// carries. Docker's named volumes start empty, and database images such as
-// postgres refuse to initialise a non-empty data directory, so the volume is
-// emptied with the first image that mounts it (which avoids pulling anything
-// extra). Images without rmdir are reported and left alone.
+// volumeInitScript prepares a fresh volume the way Docker does: the
+// lost+found directory of the ext4 image goes, and the volume root takes the
+// ownership and mode of the directory it is mounted over in the image, so
+// images that run as a non-root user (SQL Server, for one) can write to it.
+const volumeInitScript = `rmdir "$1/lost+found" 2>/dev/null; if [ -d "$2" ]; then chown "$(stat -c %u:%g "$2")" "$1" && chmod "$(stat -c %a "$2")" "$1"; fi`
+
+// emptyVolume runs volumeInitScript on a new volume with the first image that
+// mounts it, as root, so nothing extra is pulled. Images without a shell fall
+// back to a plain rmdir.
 func (r *Runner) emptyVolume(ctx context.Context, key, name string) error {
-	image := ""
+	image, platform, target := "", "", ""
 	for _, svcName := range r.Project.ServiceNames() {
 		s, _ := r.Project.GetService(svcName)
 		for _, v := range s.Volumes {
 			if v.Type == "volume" && v.Source == key {
 				image = project.ImageName(r.Project, s)
+				platform = s.Platform
+				target = v.Target
 				break
 			}
 		}
@@ -144,9 +150,16 @@ func (r *Runner) emptyVolume(ctx context.Context, key, name string) error {
 	if ok, err := r.Engine.HasImage(ctx, image); err != nil || !ok {
 		return fmt.Errorf("image %s is not available yet", image)
 	}
-	args := []string{"run", "--rm", "--network", "none", "--no-dns",
-		"--mount", mountSpec("volume", name, "/.apple-compose-volume", false),
-		"--entrypoint", "rmdir", image, "/.apple-compose-volume/lost+found"}
+	base := []string{"run", "--rm", "--network", "none", "--no-dns", "--user", "0:0",
+		"--mount", mountSpec("volume", name, "/.apple-compose-volume", false)}
+	if platform != "" {
+		base = append(base, "--platform", platform)
+	}
+	args := append(append([]string{}, base...), "--entrypoint", "/bin/sh", image, "-c", volumeInitScript, "sh", "/.apple-compose-volume", target)
+	if _, err := r.Engine.Mutate(ctx, args...); err == nil {
+		return nil
+	}
+	args = append(base, "--entrypoint", "rmdir", image, "/.apple-compose-volume/lost+found")
 	_, err := r.Engine.Mutate(ctx, args...)
 	return err
 }
