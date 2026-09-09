@@ -62,7 +62,7 @@ If you downloaded the archive with a browser rather than `curl`, macOS quarantin
 xattr -d com.apple.quarantine /usr/local/bin/apple-compose /usr/local/bin/apple-docker
 ```
 
-Release binaries are not yet signed. The release workflow signs and notarises them automatically once these repository secrets exist: `MACOS_SIGN_P12` (base64 Developer ID Application certificate), `MACOS_SIGN_PASSWORD`, and an App Store Connect API key as `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_KEY`.
+Release binaries carry Go's ad-hoc signature but are not notarised: that needs an Apple Developer Program membership, which this project does not have. Neither install path above trips Gatekeeper: Homebrew compiles from source on your machine, and `curl` downloads carry no quarantine attribute. The `xattr` step is only for archives fetched with a browser. The release workflow is ready to sign and notarise should Developer ID secrets ever be added.
 
 ### From source
 

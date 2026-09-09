@@ -59,4 +59,4 @@ Ratings come from reading each project's source and documentation on 9 September
 | **Quality** | | | |
 | Unit tests | ✅ fake-runtime harness | ✅ | ✅ |
 | Live end-to-end suite | ✅ | ❓ | ❓ |
-| Signed / notarised binaries | ⚠️ pipeline ready, awaiting Developer ID | ❓ | ❓ |
+| Signed / notarised binaries | ❌ no Apple Developer ID; Homebrew builds from source and `curl` downloads carry no quarantine | ❓ | ❓ |
