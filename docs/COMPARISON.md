@@ -51,4 +51,4 @@ Ratings come from reading each project's source and documentation on 9 September
 | **Quality** | | | |
 | Unit tests | ✅ fake-runtime harness | ✅ | ✅ |
 | Live end-to-end suite | ✅ | ❓ | ❓ |
-| Signed / notarised binaries | ❌ | ❓ | ❓ |
+| Signed / notarised binaries | ⚠️ pipeline ready, awaiting Developer ID | ❓ | ❓ |

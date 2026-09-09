@@ -31,7 +31,7 @@ macOS asks once whether the runtime's helper (`container-runtime-linux`) may use
 
 ### Homebrew
 
-The formula is served from this repository as a tap while the project is being tested; it will be submitted to homebrew-core once it has settled.
+The formula is served from this repository as a tap while the project is being tested. homebrew-core requires a project to be notable (roughly 75 stars, 30 forks or 30 watchers) before accepting a formula, so submission waits until the repository qualifies.
 
 ```bash
 brew tap skuirrels/apple-compose https://github.com/skuirrels/apple-compose
@@ -46,7 +46,7 @@ Upgrade later with `brew upgrade apple-compose`.
 Each [release](https://github.com/skuirrels/apple-compose/releases) ships a `darwin_arm64` archive and a `checksums.txt`. Pick a version, verify it, and place the binary on your `PATH`:
 
 ```bash
-VERSION=0.1.2
+VERSION=0.1.5
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/apple-compose_${VERSION}_darwin_arm64.tar.gz"
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/checksums.txt"
 grep "apple-compose_${VERSION}_darwin_arm64.tar.gz" checksums.txt | shasum -a 256 -c -
@@ -59,6 +59,8 @@ If you downloaded the archive with a browser rather than `curl`, macOS quarantin
 ```bash
 xattr -d com.apple.quarantine /usr/local/bin/apple-compose
 ```
+
+Release binaries are not yet signed. The release workflow signs and notarises them automatically once these repository secrets exist: `MACOS_SIGN_P12` (base64 Developer ID Application certificate), `MACOS_SIGN_PASSWORD`, and an App Store Connect API key as `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_KEY`.
 
 ### From source
 
@@ -126,7 +128,7 @@ Disable it per service with `x-apple-compose: {hosts_file: false}`.
 
 | Compose feature | Behaviour on Apple's runtime |
 | --- | --- |
-| `restart` | The runtime has no restart policies, so apple-compose supervises them. `up` in the foreground restarts exited services itself; `up -d` and `start` launch a per-project background supervisor that restarts them, honours `on-failure[:N]`, and leaves containers stopped by `stop`, `kill`, or `down` alone. The first exit of a detached container has no known exit code and counts as a failure; later exits are exact. The supervisor logs to `~/Library/Application Support/apple-compose/projects/<project>/supervisor.log` and exits when nothing is left to restart. |
+| `restart` | The runtime has no restart policies, so apple-compose supervises them. `up` in the foreground restarts exited services itself; `up -d` and `start` launch a per-project background supervisor that restarts them, honours `on-failure[:N]`, and leaves containers stopped by `stop`, `kill`, or `down` alone. The first exit of a detached container has no known exit code and counts as a failure; later exits are exact. The supervisor logs to `~/Library/Application Support/apple-compose/projects/<project>/supervisor.log` and exits when nothing is left to restart; `ps` shows `Up 5 seconds (restarted 2)` for containers it has restarted. |
 | `healthcheck` | No daemon runs checks continuously. apple-compose probes during `up` (for `depends_on` and `--wait`) and on `ps --health`. |
 | Named volumes | Runtime volumes are ext4 disk images that start with a `lost+found` directory. apple-compose empties a freshly created volume with the first image that mounts it, so database images such as `postgres` initialise as they do on Docker. |
 | Named volumes shared by several services | A named volume is a disk image attached to one running container at a time. Use a bind mount, Docker's `driver_opts: {type: none, o: bind, device: ./path}`, or `x-apple-compose: {shared: true}` on the volume to back it with a host directory. |

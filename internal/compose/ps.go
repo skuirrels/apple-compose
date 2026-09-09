@@ -34,6 +34,7 @@ type PsRow struct {
 	Project   string            `json:"Project"`
 	State     string            `json:"State"`
 	Status    string            `json:"Status"`
+	Restarts  int               `json:"Restarts"`
 	Health    string            `json:"Health"`
 	ExitCode  int               `json:"ExitCode"`
 	Created   time.Time         `json:"Created"`
@@ -90,9 +91,13 @@ func (r *Runner) Rows(ctx context.Context, o PsOptions) ([]PsRow, error) {
 			}
 			row.Ports = append(row.Ports, fmt.Sprintf("%s:%d->%d/%s", addr, p.HostPort, p.ContainerPort, p.Proto))
 		}
+		row.Restarts = restartCount(r.Project.Name, c.ID)
 		switch state {
 		case "running":
 			row.Status = "Up " + humanDuration(time.Since(c.Status.StartedDate))
+			if row.Restarts > 0 {
+				row.Status += fmt.Sprintf(" (restarted %d)", row.Restarts)
+			}
 			if o.Health {
 				if s, err := r.Project.GetService(svc); err == nil {
 					row.Health = string(r.CheckHealth(ctx, c, s))

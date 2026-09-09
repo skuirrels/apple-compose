@@ -223,3 +223,30 @@ func TestRetriesExhausted(t *testing.T) {
 		t.Fatal("restartLabel must drop the no policy")
 	}
 }
+
+func TestSupervisorRestartCountShowsInPs(t *testing.T) {
+	r, f, _ := upFixture(t, restartService, "t-a-1")
+	f.On("ls --format json --all", "["+stopped("t-a-1", "a", "t", map[string]string{LabelRestart: "always"})+"]", 0)
+	if err := r.Supervise(context.Background(), SuperviseOptions{Once: true, Delay: time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	if n := restartCount("t", "t-a-1"); n != 1 {
+		t.Fatalf("restart count = %d, want 1", n)
+	}
+	f.On("ls --format json", "["+running("t-a-1", "a", "t", map[string]string{LabelRestart: "always"})+"]", 0)
+	rows, err := r.Rows(context.Background(), PsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Restarts != 1 || !strings.HasSuffix(rows[0].Status, "(restarted 1)") {
+		t.Fatalf("ps must show the restart count: %+v", rows)
+	}
+	// Recreating the container starts the count afresh.
+	s, _ := r.Project.GetService("a")
+	if err := r.createContainer(context.Background(), s, 1, "t-a-1", "h"); err != nil {
+		t.Fatal(err)
+	}
+	if n := restartCount("t", "t-a-1"); n != 0 {
+		t.Fatalf("recreate must reset the count, got %d", n)
+	}
+}

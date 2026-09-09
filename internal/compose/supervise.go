@@ -104,6 +104,7 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 			}
 			st.restarts++
 			active++
+			recordRestarts(r.Project.Name, c.ID, st.restarts)
 			r.Console.Info("%s exited with code %d, restarting (%s, attempt %d)", c.ID, code, policy, st.restarts)
 			select {
 			case <-ctx.Done():
@@ -136,6 +137,43 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(o.Interval):
+		}
+	}
+}
+
+// restartsPath is the file holding how often the supervisor restarted a
+// container, shown by `ps`.
+func restartsPath(projectName, id string) string {
+	dir, err := state.ProjectDir(projectName)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "restarts", id)
+}
+
+func recordRestarts(projectName, id string, n int) {
+	p := restartsPath(projectName, id)
+	if p == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.WriteFile(p, []byte(strconv.Itoa(n)), 0o644)
+}
+
+// restartCount returns how often the supervisor restarted a container.
+func restartCount(projectName, id string) int {
+	b, err := os.ReadFile(restartsPath(projectName, id))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	return n
+}
+
+func clearRestarts(projectName string, ids []string) {
+	for _, id := range ids {
+		if p := restartsPath(projectName, id); p != "" {
+			_ = os.Remove(p)
 		}
 	}
 }

@@ -1,7 +1,8 @@
 version: 2
 project_name: apple-compose
 builds:
-  - main: ./cmd/apple-compose
+  - id: apple-compose
+    main: ./cmd/apple-compose
     binary: apple-compose
     env: [CGO_ENABLED=0]
     goos: [darwin]
@@ -12,6 +13,20 @@ archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files: [LICENSE, README.md]
+# Signing and notarisation run only when the Developer ID secrets are set,
+# so forks and local `goreleaser release --snapshot` keep working.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [apple-compose]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
 checksum:
   name_template: checksums.txt
 changelog:

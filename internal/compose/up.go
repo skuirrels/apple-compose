@@ -281,6 +281,7 @@ func (r *Runner) createContainer(ctx context.Context, s types.ServiceConfig, num
 		return err
 	}
 	clearStopped(r.Project.Name, []string{name})
+	clearRestarts(r.Project.Name, []string{name})
 	// Peers that are already running must be resolvable from the very
 	// first instruction of the new container, so its hosts file is filled
 	// in before it starts; its own address is added once it is running.
