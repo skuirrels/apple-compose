@@ -29,6 +29,7 @@ func (r *Runner) Start(ctx context.Context, services []string) error {
 			r.Console.Step("Container", c.ID, "Running")
 			continue
 		}
+		clearStopped(r.Project.Name, []string{c.ID})
 		if err := r.Engine.Start(ctx, c.ID); err != nil {
 			r.Console.Fail("Container", c.ID, "Starting", err)
 			return err
@@ -41,7 +42,7 @@ func (r *Runner) Start(ctx context.Context, services []string) error {
 			return err
 		}
 	}
-	return nil
+	return r.EnsureSupervisor(ctx)
 }
 
 // Stop stops running containers for the given services.
@@ -113,6 +114,7 @@ func (r *Runner) Kill(ctx context.Context, services []string, signal string) err
 	if err := r.Engine.Kill(ctx, ids(cs), signal); err != nil {
 		return err
 	}
+	markStopped(r.Project.Name, ids(cs))
 	for _, c := range cs {
 		r.Console.Step("Container", c.ID, "Killed")
 	}

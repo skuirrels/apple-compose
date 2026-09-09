@@ -126,7 +126,7 @@ Disable it per service with `x-apple-compose: {hosts_file: false}`.
 
 | Compose feature | Behaviour on Apple's runtime |
 | --- | --- |
-| `restart` | The runtime has no restart policies. When `up` runs in the foreground it restarts exited services according to the policy; detached containers are not restarted. |
+| `restart` | The runtime has no restart policies, so apple-compose supervises them. `up` in the foreground restarts exited services itself; `up -d` and `start` launch a per-project background supervisor that restarts them, honours `on-failure[:N]`, and leaves containers stopped by `stop`, `kill`, or `down` alone. The first exit of a detached container has no known exit code and counts as a failure; later exits are exact. The supervisor logs to `~/Library/Application Support/apple-compose/projects/<project>/supervisor.log` and exits when nothing is left to restart. |
 | `healthcheck` | No daemon runs checks continuously. apple-compose probes during `up` (for `depends_on` and `--wait`) and on `ps --health`. |
 | Named volumes | Runtime volumes are ext4 disk images that start with a `lost+found` directory. apple-compose empties a freshly created volume with the first image that mounts it, so database images such as `postgres` initialise as they do on Docker. |
 | Named volumes shared by several services | A named volume is a disk image attached to one running container at a time. Use a bind mount, Docker's `driver_opts: {type: none, o: bind, device: ./path}`, or `x-apple-compose: {shared: true}` on the volume to back it with a host directory. |
@@ -168,10 +168,11 @@ volumes:
 ```bash
 make build      # bin/apple-compose
 make test       # unit tests
+make cover      # unit tests with a coverage summary (coverage.out)
 make e2e        # end-to-end tests against a running container runtime
 ```
 
-Unit tests drive the orchestration code against a fake `container` executable (`internal/enginetest`), so they need no runtime; `make e2e` boots real containers.
+Unit tests drive the orchestration code against a fake `container` executable (`internal/enginetest`), so they need no runtime; they cover `up` planning, recreation, scaling, dependency conditions, the restart supervisor, and every lifecycle command. `make e2e` boots real containers.
 
 A feature matrix against the other compose tools for this runtime is in [docs/COMPARISON.md](docs/COMPARISON.md). Decisions taken while charting the project live in `.scratch/apple-compose/`.
 

@@ -133,6 +133,9 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	if s.StopGracePeriod != nil {
 		labels[LabelStopGrace] = time.Duration(*s.StopGracePeriod).String()
 	}
+	if v := restartLabel(s.Restart); v != "" && !spec.oneOff {
+		labels[LabelRestart] = v
+	}
 	if spec.hostsPath != "" && ext.HostsFile {
 		labels[LabelHostsFile] = spec.hostsPath
 	}
@@ -618,9 +621,6 @@ func (r *Runner) networkArgs(s types.ServiceConfig) ([]string, error) {
 func (r *Runner) warnUnsupported(s types.ServiceConfig) {
 	note := func(attr string) {
 		r.warnOnce(attr+":"+s.Name, "service %s: `%s` is not supported by the container runtime and is ignored", s.Name, attr)
-	}
-	if s.Restart != "" && s.Restart != "no" {
-		r.warnOnce("restart:"+s.Name, "service %s: restart policies are not enforced by the container runtime; `apple-compose up` restarts exited services only while attached", s.Name)
 	}
 	if len(s.Devices) > 0 {
 		note("devices")

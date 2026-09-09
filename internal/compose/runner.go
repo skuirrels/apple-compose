@@ -39,6 +39,9 @@ type Runner struct {
 	Project *types.Project
 	Console *ui.Console
 	Version string
+	// SpawnSupervisor launches the detached restart supervisor; nil uses
+	// this executable.
+	SpawnSupervisor SupervisorSpawner
 
 	warnMu sync.Mutex
 	warned map[string]bool
@@ -196,6 +199,7 @@ func (r *Runner) stopContainers(ctx context.Context, cs []engine.Container, over
 			}
 			continue
 		}
+		markStopped(r.Project.Name, g.ids)
 		for _, id := range g.ids {
 			r.Console.Step("Container", id, "Stopped")
 		}

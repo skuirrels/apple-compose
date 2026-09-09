@@ -24,6 +24,9 @@ func (r *Runner) Down(ctx context.Context, o DownOptions) error {
 	if err := r.Engine.CheckRunning(ctx); err != nil {
 		return err
 	}
+	if len(o.Services) == 0 {
+		r.StopSupervisor()
+	}
 	all, err := r.containers(ctx, true)
 	if err != nil {
 		return err

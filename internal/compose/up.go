@@ -118,6 +118,9 @@ func (r *Runner) Up(ctx context.Context, o UpOptions) (int, error) {
 	)
 	if attached {
 		logs = ui.NewPrefixSet(r.Console, out, r.attachNames(o), o.NoLogPrefix)
+		// The foreground session restarts containers itself; a supervisor
+		// left by an earlier detached run must not compete with it.
+		r.StopSupervisor()
 	}
 
 	recreated := map[string]bool{}
@@ -205,8 +208,11 @@ func (r *Runner) Up(ctx context.Context, o UpOptions) (int, error) {
 			return 1, err
 		}
 	}
-	if !attached || o.NoStart {
+	if o.NoStart {
 		return 0, nil
+	}
+	if !attached {
+		return 0, r.EnsureSupervisor(ctx)
 	}
 	return r.attachPhase(ctx, o, records, logs)
 }
@@ -274,6 +280,7 @@ func (r *Runner) createContainer(ctx context.Context, s types.ServiceConfig, num
 		r.Console.Fail("Container", name, "Creating", err)
 		return err
 	}
+	clearStopped(r.Project.Name, []string{name})
 	// Peers that are already running must be resolvable from the very
 	// first instruction of the new container, so its hosts file is filled
 	// in before it starts; its own address is added once it is running.
@@ -295,6 +302,7 @@ func startHint(err error) error {
 // for it to report an address so peers can be told about it.
 func (r *Runner) startContainer(ctx, bg context.Context, s types.ServiceConfig, name string, o UpOptions, logs *ui.PrefixSet, verb string) (*startRecord, error) {
 	rec := &startRecord{service: s, started: time.Now()}
+	clearStopped(r.Project.Name, []string{name})
 	if r.Engine.DryRun {
 		_, _ = r.Engine.Mutate(ctx, "start", name)
 		r.Console.Step("Container", name, verb)

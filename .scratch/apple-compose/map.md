@@ -23,10 +23,10 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 - [06 Core build](issues/06-core-build.md): product implemented, tested end to end, and published; release tooling in place.
 - [09 Fresh volumes and database images](issues/09-fresh-volumes.md): runtime volumes carry `lost+found`; apple-compose empties a new volume with the first image that mounts it so postgres-style initialisation works.
 - [08 Shared named volumes](issues/08-shared-volumes.md): runtime volumes are single-attach disk images; multi-service volumes get a warning and can be backed by a host directory via Docker's `driver_opts` bind syntax or `x-apple-compose: {shared: true}`.
+- [10 Restart policies for detached containers](issues/10-restart-supervisor.md): a per-project background supervisor launched by `up -d`/`start`, locked with flock, honouring stop markers and `on-failure[:N]`.
 
 ## Not yet specified
 
-- Restart policies: the runtime has none; whether the attached `up` loop should emulate `restart:` for foreground sessions.
 - Continuous health monitoring outside `up` (no daemon exists to run checks); `ps --health` probes on demand for now.
 - Port publishing could not be verified on the charting machine: unsigned third-party binaries get "no route to host" to container addresses while Apple-signed ones succeed, which is macOS Local Network privacy; the runtime helper needs that permission granted in System Settings.
 - Rosetta / amd64 image handling defaults when a compose file sets `platform`.

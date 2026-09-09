@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func binary(t *testing.T) string {
@@ -234,4 +235,62 @@ services:
 	if code != 0 {
 		t.Fatalf("client could not resolve db or itself at boot (exit %d):\n%s", code, out)
 	}
+}
+
+func TestDetachedRestartPolicy(t *testing.T) {
+	bin := binary(t)
+	dir := writeProject(t, `
+name: e2erestart
+services:
+  flaky:
+    image: alpine:3.20
+    restart: on-failure:3
+    command: sh -c "echo attempt; sleep 1; exit 1"
+`)
+	c := &cli{t: t, bin: bin, dir: dir}
+	t.Cleanup(func() { c.run("down") })
+	out := c.must("up", "-d")
+	if !strings.Contains(out, "Supervisor e2erestart") {
+		t.Fatalf("up -d must launch the supervisor:\n%s", out)
+	}
+	// The container exits after a second; the supervisor restarts it up to
+	// three times before giving up.
+	deadline := time.Now().Add(2 * time.Minute)
+	var log string
+	for time.Now().Before(deadline) {
+		b, _ := os.ReadFile(filepath.Join(stateHome(t), "projects", "e2erestart", "supervisor.log"))
+		log = string(b)
+		if strings.Contains(log, "not restarting (on-failure:3)") {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	for _, want := range []string{"attempt 1", "attempt 2", "attempt 3", "not restarting (on-failure:3)", "nothing left to supervise"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("supervisor log lacks %q:\n%s", want, log)
+		}
+	}
+	ps := c.must("ps", "-a")
+	if !strings.Contains(ps, "Exited (1)") {
+		t.Fatalf("the exit code learned by the supervisor must be visible:\n%s", ps)
+	}
+	// A deliberate stop must not be undone by a fresh supervisor.
+	c.must("start")
+	c.must("stop")
+	time.Sleep(6 * time.Second)
+	if ps := c.must("ps", "-a"); !strings.Contains(ps, "exited") && !strings.Contains(ps, "Exited") {
+		t.Fatalf("stopped container must stay stopped:\n%s", ps)
+	}
+}
+
+func stateHome(t *testing.T) string {
+	t.Helper()
+	if h := os.Getenv("APPLE_COMPOSE_HOME"); h != "" {
+		return h
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(home, "Library", "Application Support", "apple-compose")
 }

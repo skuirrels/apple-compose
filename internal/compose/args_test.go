@@ -249,7 +249,7 @@ services:
 	if !strings.Contains(args, "--cap-add ALL") {
 		t.Errorf("privileged should map to all capabilities:\n%s", args)
 	}
-	for _, want := range []string{"privileged", "restart policies", "`devices`", "hostname", "`sysctls`"} {
+	for _, want := range []string{"privileged", "`devices`", "hostname", "`sysctls`"} {
 		if !strings.Contains(warnings.String(), want) {
 			t.Errorf("missing warning about %s in:\n%s", want, warnings.String())
 		}

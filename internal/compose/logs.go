@@ -104,6 +104,12 @@ func (t *timedWriter) Flush() {
 	}
 }
 
+// Timestamped returns a writer that prefixes each line with the current time,
+// for long-running processes whose output lands in a log file.
+func Timestamped(w io.Writer) io.Writer {
+	return &timedWriter{w: w, stamp: true, now: time.Now}
+}
+
 // inWindow reports whether a container's stored log falls inside the
 // requested window, judged by its start time.
 func inWindow(c engine.Container, since, until time.Time) bool {
