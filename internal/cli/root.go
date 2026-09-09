@@ -138,12 +138,18 @@ func (a *App) rootCommand() *cobra.Command {
 // loadProject reads the compose project for a command, selecting services
 // when the command names some.
 func (a *App) loadProject(ctx context.Context, services []string, withDeps bool) (*types.Project, error) {
+	profiles := a.g.profiles
+	if len(profiles) == 0 {
+		if env := os.Getenv("COMPOSE_PROFILES"); env != "" {
+			profiles = strings.Split(env, ",")
+		}
+	}
 	p, err := project.Load(ctx, project.Options{
 		ConfigPaths: a.g.files,
 		ProjectName: a.g.projectName,
 		WorkingDir:  a.g.projectDir,
 		EnvFiles:    a.g.envFiles,
-		Profiles:    a.g.profiles,
+		Profiles:    profiles,
 		AllServices: a.g.allServices,
 	}, a.version)
 	if err != nil {

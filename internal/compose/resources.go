@@ -273,10 +273,9 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 			_, _ = r.Engine.Mutate(ctx, "image", "tag", image, tag)
 		}(tag)
 	}
-	if o.Quiet {
-		args = append(args, "--quiet")
-	}
-	args = append(args, ctxDir)
+	// `container build --quiet` hangs on 1.3.1, so quiet builds discard the
+	// output here instead of asking the runtime to suppress it.
+	args = append(args, "--progress", "plain", ctxDir)
 	r.Console.Info(" %s Building %s", r.Console.Paint("36", "⠿"), s.Name)
 	var out io.Writer = r.Console.Err
 	if o.Quiet {

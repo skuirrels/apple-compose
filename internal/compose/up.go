@@ -466,6 +466,16 @@ func (r *Runner) waitDependencies(ctx context.Context, s types.ServiceConfig) er
 			return err
 		}
 		cs = serviceContainers(cs, []string{dep}, false)
+		// Only the replicas this project expects count; stale extras
+		// left by an interrupted run are cleaned up when their service
+		// is visited.
+		var expected []engine.Container
+		for _, c := range cs {
+			if n := containerNumber(c); n >= 1 && n <= ds.GetScale() {
+				expected = append(expected, c)
+			}
+		}
+		cs = expected
 		if len(cs) == 0 {
 			if d.Required {
 				return fmt.Errorf("dependency %s of %s has no containers", dep, s.Name)

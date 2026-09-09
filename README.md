@@ -32,7 +32,7 @@ brew tap skuirrels/apple-compose https://github.com/skuirrels/apple-compose
 brew install apple-compose
 ```
 
-Or download a release archive from the [releases page](https://github.com/skuirrels/apple-compose/releases), or build from source with Go 1.25+:
+Or download a release archive from the [releases page](https://github.com/skuirrels/apple-compose/releases), or build from source with Go 1.27+:
 
 ```bash
 go install github.com/skuirrels/apple-compose/cmd/apple-compose@latest

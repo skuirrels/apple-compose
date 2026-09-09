@@ -22,8 +22,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body.encode())
 
-    def log_message(self, *args):
-        print(self.address_string(), *args, flush=True)
+    def log_message(self, fmt, *args):
+        print(self.address_string(), fmt % args, flush=True)
 
 
 http.server.ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()

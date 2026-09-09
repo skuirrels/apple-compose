@@ -15,8 +15,6 @@ services:
       db:
         condition: service_healthy
     networks: [frontend, backend]
-    deploy:
-      replicas: 2
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/ >/dev/null"]
       interval: 3s
