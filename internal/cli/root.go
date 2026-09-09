@@ -34,6 +34,11 @@ type globals struct {
 	allServices bool
 }
 
+// CommandPrefix holds the arguments a host binary needs before apple-compose's
+// own when the CLI runs embedded, so background processes it spawns reach the
+// same command tree. apple-docker sets it to ["compose"].
+var CommandPrefix []string
+
 // App wires the command tree together.
 type App struct {
 	version string
@@ -195,6 +200,7 @@ func isNoComposeFile(err error) bool {
 // runner builds a Runner for the project.
 func (a *App) runner(p *types.Project) *compose.Runner {
 	r := compose.New(a.eng, p, a.console, a.version)
+	r.SupervisorPrefix = CommandPrefix
 	for _, f := range a.g.envFiles {
 		r.SupervisorFlags = append(r.SupervisorFlags, "--env-file", f)
 	}

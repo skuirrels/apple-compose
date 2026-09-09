@@ -300,7 +300,8 @@ type SupervisorSpawner func(projectName string, cliArgs []string, logPath string
 // supervisorArgs builds the apple-compose command line that reloads this
 // runner's project exactly as the caller loaded it.
 func (r *Runner) supervisorArgs() []string {
-	args := []string{"--project-name", r.Project.Name}
+	args := append([]string{}, r.SupervisorPrefix...)
+	args = append(args, "--project-name", r.Project.Name)
 	for _, f := range r.Project.ComposeFiles {
 		args = append(args, "--file", f)
 	}

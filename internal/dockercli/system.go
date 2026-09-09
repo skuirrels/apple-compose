@@ -200,6 +200,9 @@ func (a *App) composeCommand() *cobra.Command {
 		Short:              "Define and run multi-container applications (apple-compose)",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Background supervisors spawned by compose must come back
+			// through this binary's compose subcommand.
+			cli.CommandPrefix = []string{"compose"}
 			return exit(cli.Execute(a.version, args))
 		},
 	}

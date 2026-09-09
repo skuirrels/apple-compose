@@ -45,6 +45,10 @@ type Runner struct {
 	// SupervisorFlags are extra global flags (env files, profiles) the
 	// supervisor needs to load the same project the caller did.
 	SupervisorFlags []string
+	// SupervisorPrefix are arguments placed before apple-compose's own when
+	// this CLI is embedded in another binary, such as apple-docker's
+	// `compose` subcommand.
+	SupervisorPrefix []string
 
 	warnMu sync.Mutex
 	warned map[string]bool

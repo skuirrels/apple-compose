@@ -132,6 +132,7 @@ func TestUpClearsMarkersAndStartsSupervisor(t *testing.T) {
 	f.On("ls --format json", "["+running("t-a-1", "a", "t", map[string]string{LabelRestart: "on-failure:2"})+"]", 0)
 	var spawned []string
 	r.SupervisorFlags = []string{"--env-file", "extra.env", "--profile", "debug"}
+	r.SupervisorPrefix = []string{"compose"}
 	r.SpawnSupervisor = func(name string, args []string, log string) (int, error) {
 		spawned = append(spawned, name+" "+strings.Join(args, " ")+" "+log)
 		return 4242, nil
@@ -142,7 +143,7 @@ func TestUpClearsMarkersAndStartsSupervisor(t *testing.T) {
 	if stoppedOnPurpose("t", "t-a-1") {
 		t.Fatal("up must clear the stop marker before starting")
 	}
-	if len(spawned) != 1 || !strings.HasPrefix(spawned[0], "t --project-name t --file ") || !strings.Contains(spawned[0], "compose.yaml") || !strings.HasSuffix(spawned[0], "supervisor.log") {
+	if len(spawned) != 1 || !strings.HasPrefix(spawned[0], "t compose --project-name t --file ") || !strings.Contains(spawned[0], "compose.yaml") || !strings.HasSuffix(spawned[0], "supervisor.log") {
 		t.Fatalf("supervisor must be spawned with the project's files: %v", spawned)
 	}
 	if !strings.Contains(spawned[0], "--env-file extra.env --profile debug supervise ") {

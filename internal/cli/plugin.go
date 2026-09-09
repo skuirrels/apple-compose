@@ -36,6 +36,9 @@ func (a *App) pluginCommand() *cobra.Command {
 			self, _ = filepath.EvalSymlinks(self)
 			bin := filepath.Join(dir, "bin")
 			if err := os.MkdirAll(bin, 0o755); err != nil {
+				if os.IsPermission(err) {
+					return fmt.Errorf("%w\nThe runtime is installed system-wide; run `sudo %s plugin install`", err, filepath.Base(os.Args[0]))
+				}
 				return err
 			}
 			if err := copyFile(self, filepath.Join(bin, name)); err != nil {

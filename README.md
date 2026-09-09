@@ -48,7 +48,7 @@ Upgrade later with `brew upgrade apple-compose`.
 Each [release](https://github.com/skuirrels/apple-compose/releases) ships a `darwin_arm64` archive and a `checksums.txt`. Pick a version, verify it, and place the binary on your `PATH`:
 
 ```bash
-VERSION=0.3.2
+VERSION=0.3.3
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/apple-compose_${VERSION}_darwin_arm64.tar.gz"
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/checksums.txt"
 grep "apple-compose_${VERSION}_darwin_arm64.tar.gz" checksums.txt | shasum -a 256 -c -
@@ -88,6 +88,8 @@ The `container` CLI discovers plugins, so apple-compose can install itself as a 
 apple-compose plugin install
 container compose up -d
 ```
+
+When the runtime is installed system-wide under `/usr/local`, the plugin directory is root-owned, so run `sudo apple-compose plugin install` once.
 
 ### Use it as `docker`
 
@@ -197,7 +199,7 @@ Global Docker flags (`-H`, `--context`, `--config`, `-l`, `--tls*`) are accepted
 
 | Variable | Effect |
 | --- | --- |
-| `APPLE_COMPOSE_DNS` | Comma-separated nameservers given to every container and image build that sets none of its own, for hosts where the runtime's resolver on the network gateway does not answer (for example a runtime installed without administrator rights, which cannot bind port 53). |
+| `APPLE_COMPOSE_DNS` | Comma-separated nameservers given to every container and image build that sets none of its own. Use it when `nslookup` inside a container fails while the host resolves fine: the runtime's NAT resolver on the network gateway is then being blocked, typically by the macOS application firewall or a VPN client. Example: `export APPLE_COMPOSE_DNS=1.1.1.1`. |
 | `CONTAINER_BIN` | Path to the `container` executable when it is not on `PATH`. |
 | `APPLE_COMPOSE_HOME` | State directory (default `~/Library/Application Support/apple-compose`). |
 | `COMPOSE_FILE`, `COMPOSE_PROJECT_NAME`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR` | Honoured as by Docker Compose. |
