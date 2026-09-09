@@ -47,6 +47,7 @@ Ratings come from reading each project's source and documentation on 9 September
 | `--exit-code-from`, `--abort-on-container-exit` | ✅ | ❌ | ❌ |
 | `--wait`, `--scale`, `--remove-orphans`, `--no-deps` | ✅ | ⚠️ some | ❌ |
 | `--dry-run` | ✅ | ✅ | ❌ |
+| `watch` / `up --watch` (`develop.watch`) | ✅ sync, rebuild, restart, sync+restart, sync+exec | ❌ | ❌ |
 | `logs --timestamps/--since/--until` | ⚠️ read-time stamps, window by container start | ❓ | ❌ |
 | Config-hash recreate on change | ✅ | ✅ | ❌ recreates always |
 | **Runtime mechanics** | | | |

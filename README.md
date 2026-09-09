@@ -140,7 +140,13 @@ Containers `apple-docker run` creates on a user-defined network get the same tre
 
 ### Supported Compose attributes
 
-`image`, `build`, `command`, `entrypoint`, `environment`, `env_file`, `working_dir`, `user`, `ports` (including ranges), `expose`, `volumes` (bind, named, anonymous, tmpfs, read-only), `tmpfs`, `networks` (several per service, aliases, `mac_address`), `network_mode: none`, `dns`, `dns_search`, `dns_opt`, `extra_hosts`, `links`, `depends_on`, `healthcheck`, `labels`, `container_name`, `scale` and `deploy.replicas`, `cpus` and `deploy.resources.limits.cpus` (rounded up to whole CPUs), `mem_limit` and `deploy.resources.limits.memory`, `shm_size`, `ulimits`, `cap_add`, `cap_drop`, `read_only`, `init`, `platform`, `stop_signal`, `stop_grace_period`, `tty`, `stdin_open`, `profiles`, `pull_policy`, `secrets` and `configs` (file, environment and inline content, mounted read-only), `extends`, `include`, `x-*` extensions.
+`image`, `build`, `command`, `entrypoint`, `environment`, `env_file`, `working_dir`, `user`, `ports` (including ranges), `expose`, `volumes` (bind, named, anonymous, tmpfs, read-only), `tmpfs`, `networks` (several per service, aliases, `mac_address`), `network_mode: none`, `dns`, `dns_search`, `dns_opt`, `extra_hosts`, `links`, `depends_on`, `healthcheck`, `labels`, `container_name`, `scale` and `deploy.replicas`, `cpus` and `deploy.resources.limits.cpus` (rounded up to whole CPUs), `mem_limit` and `deploy.resources.limits.memory`, `shm_size`, `ulimits`, `cap_add`, `cap_drop`, `read_only`, `init`, `platform`, `stop_signal`, `stop_grace_period`, `tty`, `stdin_open`, `profiles`, `pull_policy`, `secrets` and `configs` (file, environment and inline content, mounted read-only), `extends`, `include`, `develop.watch`, `x-*` extensions.
+
+### Watch mode
+
+`apple-compose watch` and `up --watch` apply a service's `develop.watch` triggers as files change: `sync` copies changed files into the container, `rebuild` rebuilds the image and recreates the service, `restart` and `sync+restart` restart it, and `sync+exec` runs a command afterwards. `ignore` and `include` patterns match a whole relative path when they contain a slash and any single path segment otherwise, so `node_modules` excludes it at any depth; `.git` is always excluded. `--prune` also deletes files inside the container when they disappear from the host.
+
+Changes are found by rescanning the watched trees every 500 ms, tunable with `--interval`. Polling costs a directory walk rather than a file descriptor per file, which is what macOS charges for a kqueue watch on a large source tree. `up --watch` runs the services in the background and watches in the foreground; stopping the watch leaves them running, as Compose does.
 
 ### Where the runtime differs from Docker
 

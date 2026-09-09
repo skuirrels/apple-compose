@@ -375,3 +375,111 @@ func TestDockerRunResolvesNamesOnUserNetwork(t *testing.T) {
 		t.Fatalf("a running container must learn a newcomer's address:\n%s", got)
 	}
 }
+
+func TestWatchSyncsChangedFiles(t *testing.T) {
+	bin := binary(t)
+	dir := writeProject(t, `
+name: e2ewatch
+services:
+  app:
+    image: alpine:3.20
+    command: sh -c "while true; do sleep 1; done"
+    develop:
+      watch:
+        - path: ./src
+          action: sync
+          target: /srv/app
+          ignore: [ignored]
+`)
+	src := filepath.Join(dir, "src")
+	if err := os.MkdirAll(filepath.Join(src, "ignored"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := &cli{t: t, bin: bin, dir: dir}
+	t.Cleanup(func() { c.run("down") })
+	c.must("up", "-d")
+
+	logPath := filepath.Join(t.TempDir(), "watch.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logFile.Close()
+	watch := exec.Command(bin, "watch", "--no-up", "--prune", "--interval", "200ms")
+	watch.Dir = dir
+	watch.Stdout, watch.Stderr = logFile, logFile
+	if err := watch.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = watch.Process.Signal(os.Interrupt)
+		_ = watch.Wait()
+		b, _ := os.ReadFile(logPath)
+		t.Logf("watch output:\n%s", b)
+	})
+	// The baseline scan happens before the watch says it is watching, so
+	// wait for that line: a file written earlier would be part of the
+	// baseline and never reported as a change.
+	waitForLog(t, logPath, "watching")
+
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(src, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A file created after the watch starts must reach the container, and an
+	// ignored directory must not.
+	write("hello.txt", "one")
+	if err := os.WriteFile(filepath.Join(src, "ignored", "skip.txt"), []byte("no"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitForContent(t, c, "/srv/app/hello.txt", "one")
+	// A rewrite reaches it too.
+	write("hello.txt", "two")
+	waitForContent(t, c, "/srv/app/hello.txt", "two")
+	if out, _ := c.run("exec", "app", "sh", "-c", "ls /srv/app"); strings.Contains(out, "skip.txt") {
+		t.Fatalf("an ignored path must not be synced:\n%s", out)
+	}
+	// --prune removes what the host no longer has.
+	if err := os.Remove(filepath.Join(src, "hello.txt")); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, code := c.run("exec", "app", "test", "-f", "/srv/app/hello.txt"); code != 0 {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatal("--prune must delete a file the host no longer has")
+}
+
+// waitForLog blocks until a log file contains want.
+func waitForLog(t *testing.T, path, want string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(path); err == nil && strings.Contains(string(b), want) {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("watch never reported %q", want)
+}
+
+// waitForContent blocks until a file inside the app container holds want.
+func waitForContent(t *testing.T, c *cli, path, want string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		out, code := c.run("exec", "app", "cat", path)
+		if code == 0 && strings.TrimSpace(out) == want {
+			return
+		}
+		last = out
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("%s never held %q, last read:\n%s", path, want, last)
+}

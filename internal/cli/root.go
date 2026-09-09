@@ -139,7 +139,7 @@ func (a *App) rootCommand() *cobra.Command {
 		a.pullCommand(), a.pushCommand(), a.buildCommand(), a.imagesCommand(),
 		a.configCommand(), a.lsCommand(), a.portCommand(), a.cpCommand(), a.waitCommand(),
 		a.topCommand(), a.eventsCommand(), a.versionCommand(), a.pluginCommand(),
-		a.superviseCommand(),
+		a.watchCommand(), a.superviseCommand(),
 	)
 	return root
 }

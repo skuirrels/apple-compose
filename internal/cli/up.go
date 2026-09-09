@@ -19,6 +19,7 @@ func (a *App) upCommand() *cobra.Command {
 		pull    string
 		scale   []string
 		noColor bool
+		watch   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "up [OPTIONS] [SERVICE...]",
@@ -45,9 +46,18 @@ func (a *App) upCommand() *cobra.Command {
 			if noColor {
 				a.console.Colour = false
 			}
-			code, err := a.runner(p).Up(cmd.Context(), o)
+			if watch {
+				// Watching needs the services in the background; Compose
+				// keeps them running when the watch stops.
+				o.Detach = true
+			}
+			runner := a.runner(p)
+			code, err := runner.Up(cmd.Context(), o)
 			if err != nil {
 				return err
+			}
+			if watch && code == 0 {
+				return a.watchAfterUp(cmd, runner, args, compose.DefaultWatchInterval)
 			}
 			return exit(code)
 		},
@@ -75,6 +85,7 @@ func (a *App) upCommand() *cobra.Command {
 	f.BoolVar(&noColor, "no-color", false, "Produce monochrome output")
 	f.StringArrayVar(&scale, "scale", nil, "Scale SERVICE to NUM instances. Overrides the `scale` setting in the Compose file if present")
 	f.BoolVar(&o.NoDeps, "no-deps", false, "Don't start linked services")
+	f.BoolVarP(&watch, "watch", "w", false, "Watch source code and rebuild or refresh containers when files change. Implies detached mode")
 	f.Bool("renew-anon-volumes", false, "Accepted for compatibility")
 	_ = f.MarkHidden("renew-anon-volumes")
 	f.Bool("no-log-color", false, "Accepted for compatibility")
