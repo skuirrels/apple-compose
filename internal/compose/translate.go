@@ -12,6 +12,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 
+	"github.com/skuirrels/apple-compose/internal/engine"
 	"github.com/skuirrels/apple-compose/internal/project"
 	"github.com/skuirrels/apple-compose/internal/state"
 )
@@ -237,7 +238,11 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 		return nil, err
 	}
 	add(netArgs...)
-	for _, d := range s.DNS {
+	dns := s.DNS
+	if len(dns) == 0 {
+		dns = engine.DefaultDNS()
+	}
+	for _, d := range dns {
 		add("--dns", d)
 	}
 	for _, d := range s.DNSSearch {

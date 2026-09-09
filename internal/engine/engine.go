@@ -22,6 +22,23 @@ import (
 // ErrNotFound is returned when the runtime has no resource with the given id.
 var ErrNotFound = errors.New("not found")
 
+// EnvDefaultDNS names the environment variable holding comma-separated
+// nameservers applied to every container and build that does not set its
+// own. It is a workaround for hosts where the runtime's resolver on the
+// network gateway does not answer.
+const EnvDefaultDNS = "APPLE_COMPOSE_DNS"
+
+// DefaultDNS returns the nameservers from EnvDefaultDNS, if any.
+func DefaultDNS() []string {
+	var out []string
+	for _, s := range strings.Split(os.Getenv(EnvDefaultDNS), ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // Engine locates and runs the `container` binary.
 type Engine struct {
 	// Bin is the absolute path of the `container` executable.

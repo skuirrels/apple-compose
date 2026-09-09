@@ -274,6 +274,11 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 	if b.NoCache || o.NoCache {
 		args = append(args, "--no-cache")
 	}
+	// Builds resolve names through the builder VM, which uses the same
+	// gateway resolver, so the default nameservers apply there too.
+	for _, d := range engine.DefaultDNS() {
+		args = append(args, "--dns", d)
+	}
 	if b.Pull || o.PullBuild {
 		args = append(args, "--pull")
 	}

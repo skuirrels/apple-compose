@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/skuirrels/apple-compose/internal/compose"
 	"github.com/skuirrels/apple-compose/internal/engine"
 	"github.com/skuirrels/apple-compose/internal/ui"
 )
@@ -32,6 +33,8 @@ type App struct {
 	// execFn replaces the current process with the runtime CLI. Tests
 	// substitute a recorder.
 	execFn func(bin string, args []string) error
+	// spawnFn launches the restart supervisor; tests substitute a recorder.
+	spawnFn compose.SupervisorSpawner
 	// exited is set when execFn returned instead of replacing the process,
 	// so tests can observe the translated command.
 	execd []string

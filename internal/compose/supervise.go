@@ -214,6 +214,13 @@ func stopMarker(projectName, id string) string {
 	return filepath.Join(dir, "stopped", id)
 }
 
+// MarkStopped records that the named containers were stopped on purpose so
+// the supervisor leaves them alone; ClearStopped lifts that.
+func MarkStopped(projectName string, ids []string) { markStopped(projectName, ids) }
+
+// ClearStopped removes stop markers, typically before a start.
+func ClearStopped(projectName string, ids []string) { clearStopped(projectName, ids) }
+
 func markStopped(projectName string, ids []string) {
 	for _, id := range ids {
 		p := stopMarker(projectName, id)
@@ -261,12 +268,21 @@ func spawnSupervisor(projectName string, configFiles []string, workingDir, logPa
 		args = append(args, "--project-directory", workingDir)
 	}
 	args = append(args, "supervise")
+	return SpawnDetached(exe, args, logPath)
+}
+
+// SpawnDetached starts exe with args as a daemon in its own session, with
+// stdout and stderr appended to logPath, and returns its pid.
+func SpawnDetached(exe string, args []string, logPath string) (int, error) {
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return 0, err
 	}
 	defer logFile.Close()
 	cmd := exec.Command(exe, args...)
+	// Run from the state directory so no compose file in the caller's
+	// working directory is picked up by accident.
+	cmd.Dir = filepath.Dir(logPath)
 	cmd.Stdin = nil
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile

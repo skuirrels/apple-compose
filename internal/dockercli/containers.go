@@ -251,7 +251,10 @@ func (a *App) startCommand() *cobra.Command {
 				}
 				return a.exec(append(sargs, args[0])...)
 			}
-			return a.each(args, func(name string) error { return a.eng.Start(cmd.Context(), name) })
+			clearStopped(args...)
+			err := a.each(args, func(name string) error { return a.eng.Start(cmd.Context(), name) })
+			a.ensureSupervisor(cmd.Context())
+			return err
 		},
 	}
 	cmd.Flags().BoolVarP(&attach, "attach", "a", false, "Attach STDOUT/STDERR and forward signals")
@@ -270,7 +273,11 @@ func (a *App) stopCommand() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.each(args, func(name string) error {
-				return a.eng.Stop(cmd.Context(), []string{name}, signal, time.Duration(timeout)*time.Second)
+				if err := a.eng.Stop(cmd.Context(), []string{name}, signal, time.Duration(timeout)*time.Second); err != nil {
+					return err
+				}
+				markStopped(name)
+				return nil
 			})
 		},
 	}
@@ -287,7 +294,7 @@ func (a *App) restartCommand() *cobra.Command {
 		Short: "Restart one or more containers",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.each(args, func(name string) error {
+			err := a.each(args, func(name string) error {
 				c, err := a.eng.InspectContainer(cmd.Context(), name)
 				if err != nil {
 					return err
@@ -297,8 +304,11 @@ func (a *App) restartCommand() *cobra.Command {
 						return err
 					}
 				}
+				clearStopped(name)
 				return a.eng.Start(cmd.Context(), name)
 			})
+			a.ensureSupervisor(cmd.Context())
+			return err
 		},
 	}
 	cmd.Flags().IntVarP(&timeout, "time", "t", 10, "Seconds to wait before killing the container")
@@ -313,7 +323,13 @@ func (a *App) killCommand() *cobra.Command {
 		Short: "Kill one or more running containers",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.each(args, func(name string) error { return a.eng.Kill(cmd.Context(), []string{name}, signal) })
+			return a.each(args, func(name string) error {
+				if err := a.eng.Kill(cmd.Context(), []string{name}, signal); err != nil {
+					return err
+				}
+				markStopped(name)
+				return nil
+			})
 		},
 	}
 	cmd.Flags().StringVarP(&signal, "signal", "s", "KILL", "Signal to send to the container")

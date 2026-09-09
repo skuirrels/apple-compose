@@ -9,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/skuirrels/apple-compose/internal/engine"
 )
 
 // runOptions are Docker's `run`/`create` flags.
@@ -176,7 +178,11 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 			args = append(args, "--network", n)
 		}
 	}
-	for _, d := range o.dns {
+	dns := o.dns
+	if len(dns) == 0 {
+		dns = engine.DefaultDNS()
+	}
+	for _, d := range dns {
 		args = append(args, "--dns", d)
 	}
 	for _, d := range o.dnsSearch {
@@ -231,7 +237,16 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 		args = append(args, "--cidfile", o.cidfile)
 	}
 	if o.restart != "" && o.restart != "no" {
-		a.warn("--restart %s is not enforced: the container runtime has no restart policies; use `apple-compose` for supervised services", o.restart)
+		// apple-compose's supervisor honours the policy for detached
+		// containers; it finds them through these labels.
+		service := o.name
+		if service == "" {
+			service = strings.NewReplacer("/", "-", ":", "-", "@", "-").Replace(image)
+		}
+		args = append(args, restartLabels(o.restart, service)...)
+		if verb == "run" && !o.detach {
+			a.warn("--restart %s applies once the container runs detached; this attached session ends when it exits", o.restart)
+		}
 	}
 	if o.hostname != "" {
 		a.warn("--hostname is ignored: the container runtime derives the hostname from the container name")
@@ -269,6 +284,15 @@ func (a *App) runCommand() *cobra.Command {
 			translated, err := a.translateRun(cmd, o, args[0], args[1:], "run")
 			if err != nil {
 				return err
+			}
+			if o.detach && o.restart != "" && o.restart != "no" {
+				// Stay in the process so the supervisor can be started
+				// once the container is running.
+				if err := a.runAttached(cmd.Context(), translated...); err != nil {
+					return err
+				}
+				a.ensureSupervisor(cmd.Context())
+				return nil
 			}
 			return a.exec(translated...)
 		},

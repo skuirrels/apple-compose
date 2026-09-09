@@ -324,6 +324,9 @@ func (a *App) buildCommand() *cobra.Command {
 			if output != "" {
 				bargs = append(bargs, "--output", output)
 			}
+			for _, d := range engine.DefaultDNS() {
+				bargs = append(bargs, "--dns", d)
+			}
 			switch {
 			case quiet:
 				// The runtime's --quiet hangs on 1.3.1; plain progress is

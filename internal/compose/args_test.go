@@ -298,3 +298,14 @@ volumes:
 		t.Errorf("expected shared volume warning, got: %s", warnings.String())
 	}
 }
+
+func TestDefaultDNSFromEnvironment(t *testing.T) {
+	r, _ := loadRunner(t, "name: t\nservices:\n  a:\n    image: img\n  b:\n    image: img\n    dns: [9.9.9.9]\n", nil)
+	t.Setenv("APPLE_COMPOSE_DNS", "1.1.1.1")
+	if got := argsFor(t, r, "a"); !strings.Contains(got, "--dns 1.1.1.1") {
+		t.Fatalf("default nameserver missing: %s", got)
+	}
+	if got := argsFor(t, r, "b"); strings.Contains(got, "1.1.1.1") || !strings.Contains(got, "--dns 9.9.9.9") {
+		t.Fatalf("service dns must win over the default: %s", got)
+	}
+}

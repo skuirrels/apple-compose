@@ -35,7 +35,7 @@ Ratings come from reading each project's source and documentation on 9 September
 | stop_signal, stop_grace_period | ✅ | ❌ | ❌ |
 | scale / deploy.replicas | ✅ | ❌ planned | ❌ |
 | pull_policy | ✅ | ❌ | ❌ |
-| restart policies | ✅ foreground loop and detached supervisor | ⚠️ own supervisor state | ❌ flag ignored by runtime |
+| restart policies | ✅ foreground loop and detached supervisor, also for `docker run --restart` | ⚠️ own supervisor state | ❌ flag ignored by runtime |
 | hostname | ⚠️ hosts alias | ⚠️ | ⚠️ |
 | **Commands** | | | |
 | up, down, ps, logs | ✅ | ✅ | ⚠️ up, down only |

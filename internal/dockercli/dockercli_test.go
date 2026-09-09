@@ -2,9 +2,12 @@ package dockercli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/skuirrels/apple-compose/internal/compose"
 	"github.com/skuirrels/apple-compose/internal/enginetest"
 	"github.com/skuirrels/apple-compose/internal/ui"
 )
@@ -59,14 +62,55 @@ func TestRunTranslatesDockerFlags(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d:\n%s", code, h.err)
 	}
-	want := "run --name web --detach --env A=1 --env-file .env --workdir /srv --user 1000:1000 --label tier=web --publish 8080:80 --publish 127.0.0.1:9000:9000/udp --volume /tmp:/host:ro --mount type=volume,source=data,target=/data --tmpfs /run --network front --dns 1.1.1.1 --entrypoint sh --cpus 2 --memory 512m --cap-add ALL --cap-add NET_ADMIN --read-only --init --shm-size 1g --ulimit nofile=1024:2048 alpine:3.20 sh -c echo hi"
-	if got := h.execd(); got != want {
+	want := "run --name web --detach --env A=1 --env-file .env --workdir /srv --user 1000:1000 --label tier=web --publish 8080:80 --publish 127.0.0.1:9000:9000/udp --volume /tmp:/host:ro --mount type=volume,source=data,target=/data --tmpfs /run --network front --dns 1.1.1.1 --entrypoint sh --cpus 2 --memory 512m --cap-add ALL --cap-add NET_ADMIN --read-only --init --shm-size 1g --ulimit nofile=1024:2048 --label com.apple-compose.restart=always --label com.docker.compose.project=apple-docker --label com.docker.compose.service=web --label com.docker.compose.oneoff=False alpine:3.20 sh -c echo hi"
+	// A detached run with a restart policy stays in-process so the
+	// supervisor can be started afterwards.
+	if got := h.fake.Call("run"); got != want {
 		t.Fatalf("translated run =\n%s\nwant\n%s", got, want)
 	}
-	for _, w := range []string{"rounded up to 2", "--restart always is not enforced", "--hostname is ignored", "--privileged has no equivalent", "--security-opt has no equivalent"} {
+	for _, w := range []string{"rounded up to 2", "--hostname is ignored", "--privileged has no equivalent", "--security-opt has no equivalent"} {
 		if !strings.Contains(h.err.String(), w) {
 			t.Fatalf("missing warning %q:\n%s", w, h.err)
 		}
+	}
+}
+
+func TestRunWithRestartStartsSupervisor(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("APPLE_COMPOSE_HOME", t.TempDir())
+	var spawned []string
+	h.app.spawnFn = func(name string, _ []string, _ string, log string) (int, error) {
+		spawned = append(spawned, name+" "+log)
+		return 99, nil
+	}
+	h.fake.On("ls --format json", "["+enginetest.ContainerJSON("web", "web", supervisedProject, "running", "10.0.0.2", "default", map[string]string{compose.LabelRestart: "on-failure"})+"]", 0)
+	if code := h.run("run", "-d", "--name", "web", "--restart", "on-failure", "alpine"); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	if h.execd() != "" || !h.fake.Called("run --name web --detach --label com.apple-compose.restart=on-failure") {
+		t.Fatalf("detached run with a policy must run in-process: %q %v", h.execd(), h.fake.Calls())
+	}
+	if len(spawned) != 1 || !strings.HasPrefix(spawned[0], supervisedProject+" ") {
+		t.Fatalf("supervisor must be spawned for the pseudo project: %v", spawned)
+	}
+	// stop marks the container so the supervisor leaves it alone; start lifts it.
+	if code := h.run("stop", "web"); code != 0 {
+		t.Fatalf("stop: %d %s", code, h.err)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("APPLE_COMPOSE_HOME"), "projects", supervisedProject, "stopped", "web")); err != nil {
+		t.Fatalf("stop must leave a marker: %v", err)
+	}
+	if code := h.run("start", "web"); code != 0 {
+		t.Fatalf("start: %d %s", code, h.err)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("APPLE_COMPOSE_HOME"), "projects", supervisedProject, "stopped", "web")); err == nil {
+		t.Fatal("start must clear the marker")
+	}
+	if code := h.run("run", "--restart", "always", "alpine"); code != 0 || h.execd() != "run --label com.apple-compose.restart=always --label com.docker.compose.project=apple-docker --label com.docker.compose.service=alpine --label com.docker.compose.oneoff=False alpine" {
+		t.Fatalf("attached run with a policy must still exec: %q", h.execd())
+	}
+	if !strings.Contains(h.err.String(), "applies once the container runs detached") {
+		t.Fatalf("expected attached-run warning:\n%s", h.err)
 	}
 }
 
@@ -482,5 +526,19 @@ func TestFormatHelpers(t *testing.T) {
 	}
 	if _, err := parseFilters([]string{"bogus"}); err == nil {
 		t.Fatal("bad filter must fail")
+	}
+}
+
+func TestDefaultDNSAppliesToRunAndBuild(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("APPLE_COMPOSE_DNS", "1.1.1.1, 8.8.8.8")
+	if code := h.run("run", "alpine"); code != 0 || h.execd() != "run --dns 1.1.1.1 --dns 8.8.8.8 alpine" {
+		t.Fatalf("run must carry the default nameservers: %q", h.execd())
+	}
+	if code := h.run("run", "--dns", "9.9.9.9", "alpine"); code != 0 || h.execd() != "run --dns 9.9.9.9 alpine" {
+		t.Fatalf("an explicit --dns must win: %q", h.execd())
+	}
+	if code := h.run("build", "."); code != 0 || h.execd() != "build --dns 1.1.1.1 --dns 8.8.8.8 ." {
+		t.Fatalf("build must carry the default nameservers: %q", h.execd())
 	}
 }

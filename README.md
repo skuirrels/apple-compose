@@ -48,7 +48,7 @@ Upgrade later with `brew upgrade apple-compose`.
 Each [release](https://github.com/skuirrels/apple-compose/releases) ships a `darwin_arm64` archive and a `checksums.txt`. Pick a version, verify it, and place the binary on your `PATH`:
 
 ```bash
-VERSION=0.2.1
+VERSION=0.3.0
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/apple-compose_${VERSION}_darwin_arm64.tar.gz"
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/checksums.txt"
 grep "apple-compose_${VERSION}_darwin_arm64.tar.gz" checksums.txt | shasum -a 256 -c -
@@ -179,7 +179,7 @@ volumes:
 
 | Command group | Supported | Notes |
 | --- | --- | --- |
-| `run`, `create` | `-d`, `--rm`, `-it`, `--name`, `-p`, `-v`, `--mount`, `--tmpfs`, `-e`, `--env-file`, `-w`, `-u`, `-l`, `--network`, `--dns*`, `--entrypoint`, `--platform`, `--cpus`, `-m`, `--cap-add/drop`, `--privileged`, `--read-only`, `--init`, `--shm-size`, `--ulimit`, `--cidfile`, `--pull` | `--cpus` rounds up to whole CPUs; `--network host`, `-p 80` without a host port, and `--publish-all` are refused; `--restart` and `--hostname` warn; cgroup, device, healthcheck and logging flags are accepted and ignored with a warning. |
+| `run`, `create` | `-d`, `--rm`, `-it`, `--name`, `-p`, `-v`, `--mount`, `--tmpfs`, `-e`, `--env-file`, `-w`, `-u`, `-l`, `--network`, `--dns*`, `--entrypoint`, `--platform`, `--cpus`, `-m`, `--cap-add/drop`, `--privileged`, `--read-only`, `--init`, `--shm-size`, `--ulimit`, `--cidfile`, `--pull`, `--restart` | `--cpus` rounds up to whole CPUs; `--network host`, `-p 80` without a host port, and `--publish-all` are refused; `--restart` on a detached container is honoured by apple-compose's supervisor (the containers form the pseudo project `apple-docker`); `--hostname` warns; cgroup, device, healthcheck and logging flags are accepted and ignored with a warning. |
 | `ps`, `container ls` | `-a`, `-q`, `-n`, `-l`, `--no-trunc`, `--filter name/id/status/label/ancestor/network/volume`, `--format table/json/template` | `--size` is unavailable. |
 | `start`, `stop`, `restart`, `kill`, `rm`, `wait`, `port`, `top`, `cp`, `export`, `stats`, `logs`, `exec`, `attach` | Docker's flags | `wait` prints 0 because the runtime reports no exit code for detached containers; `attach` works only on stopped containers; `logs --since/--until` are ignored. |
 | `inspect` | containers, images, networks, volumes; `--format`, `--type` | Docker-shaped JSON (`.State`, `.Config`, `.NetworkSettings`, `.Mounts`, `.HostConfig`) with the runtime's full record under `.Runtime`. |
@@ -194,9 +194,12 @@ Global Docker flags (`-H`, `--context`, `--config`, `-l`, `--tls*`) are accepted
 
 ## Environment variables
 
-- `CONTAINER_BIN`: path to the `container` executable when it is not on `PATH`.
-- `APPLE_COMPOSE_HOME`: state directory (default `~/Library/Application Support/apple-compose`).
-- `COMPOSE_FILE`, `COMPOSE_PROJECT_NAME`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR`: honoured as by Docker Compose.
+| Variable | Effect |
+| --- | --- |
+| `APPLE_COMPOSE_DNS` | Comma-separated nameservers given to every container and image build that sets none of its own, for hosts where the runtime's resolver on the network gateway does not answer (for example a runtime installed without administrator rights, which cannot bind port 53). |
+| `CONTAINER_BIN` | Path to the `container` executable when it is not on `PATH`. |
+| `APPLE_COMPOSE_HOME` | State directory (default `~/Library/Application Support/apple-compose`). |
+| `COMPOSE_FILE`, `COMPOSE_PROJECT_NAME`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR` | Honoured as by Docker Compose. |
 
 ## Development
 
