@@ -1,7 +1,7 @@
 class AppleCompose < Formula
   desc "docker compose for Apple's container runtime on macOS"
   homepage "https://github.com/skuirrels/apple-compose"
-  url "https://github.com/skuirrels/apple-compose.git", tag: "v0.3.6"
+  url "https://github.com/skuirrels/apple-compose.git", tag: "v0.4.0"
   head "https://github.com/skuirrels/apple-compose.git", branch: "main"
   license "Apache-2.0"
 
