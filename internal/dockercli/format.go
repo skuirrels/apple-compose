@@ -33,9 +33,17 @@ var templateFuncs = template.FuncMap{
 	},
 }
 
+// unescape applies the escape sequences Docker accepts inside --format
+// strings, so `{{.Names}}\t{{.Status}}` separates columns with a tab.
+func unescape(format string) string {
+	r := strings.NewReplacer(`\t`, "\t", `\n`, "\n", `\\`, `\`)
+	return r.Replace(format)
+}
+
 // render prints items the way Docker's --format does: a table by default,
 // one JSON object per line for "json", or a Go template per item.
 func render(w io.Writer, format string, items []any, headers []string, row func(any) []string) error {
+	format = unescape(format)
 	switch {
 	case format == "" || format == "table":
 		var rows [][]string
@@ -89,6 +97,7 @@ func render(w io.Writer, format string, items []any, headers []string, row func(
 // renderInspect prints inspect results: a JSON array by default, or one
 // template result per item.
 func renderInspect(w io.Writer, format string, items []any) error {
+	format = unescape(format)
 	if format == "" || format == "json" {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "    ")

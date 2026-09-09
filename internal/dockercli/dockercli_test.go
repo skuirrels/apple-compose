@@ -455,6 +455,17 @@ func TestGlobalFlagsAndDryRun(t *testing.T) {
 	}
 }
 
+func TestFormatUnescapesDockerSequences(t *testing.T) {
+	h := newHarness(t)
+	h.fake.On("ls --format json", "["+enginetest.ContainerJSON("web", "web", "p", "running", "10.0.0.2", "default", nil)+"]", 0)
+	if code := h.run("ps", "--format", `{{.Names}}\t{{.State}}\n`); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	if got := h.out.String(); got != "web\trunning\n\n" {
+		t.Fatalf("escapes must become tab and newline, got %q", got)
+	}
+}
+
 func TestFormatHelpers(t *testing.T) {
 	if humanSize(999) != "999B" || humanSize(1500) != "1.5kB" || humanSize(21_400_000) != "21.4MB" || humanSize(3_500_000_000) != "3.5GB" {
 		t.Fatalf("humanSize: %s %s %s %s", humanSize(999), humanSize(1500), humanSize(21_400_000), humanSize(3_500_000_000))
