@@ -25,7 +25,7 @@ shop-web-1   nginx:alpine     "nginx -g daemon off;"  web       11 seconds ago  
 ## Requirements
 
 - Apple silicon Mac running **macOS 26** or later (the runtime's custom networks need it).
-- [Apple `container`](https://github.com/apple/container/releases) 1.3 or later, with its services started (`container system start`).
+- [Apple `container`](https://github.com/apple/container/releases) 1.3 or later, with its services started (`container system start`). Tested against 1.3.1 and 1.4.1.
 
 macOS asks once whether the runtime's helper (`container-runtime-linux`) may use the local network. Published ports stay unreachable until that is allowed under System Settings › Privacy & Security › Local Network.
 
