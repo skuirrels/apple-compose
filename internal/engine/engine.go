@@ -183,6 +183,12 @@ func (e *Engine) JSON(ctx context.Context, v any, args ...string) error {
 	return nil
 }
 
+// IsNotFound reports whether err is ErrNotFound or a runtime failure that
+// says the resource does not exist.
+func IsNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound) || isNotFound(err)
+}
+
 func isNotFound(err error) bool {
 	var xe *ExitError
 	if !errors.As(err, &xe) {

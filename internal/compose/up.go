@@ -347,6 +347,10 @@ func (r *Runner) attachLoop(ctx context.Context, s types.ServiceConfig, name str
 			fmt.Fprintf(r.Console.Err, "%s: %v\n", name, err)
 			code = 1
 		}
+		// A final line without a newline would otherwise stay buffered.
+		if p, ok := w.(interface{ Flush() }); ok {
+			p.Flush()
+		}
 		r.recordExit(name, code)
 		select {
 		case tracked <- code:

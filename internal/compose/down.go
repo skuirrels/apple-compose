@@ -2,7 +2,6 @@ package compose
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/skuirrels/apple-compose/internal/engine"
@@ -164,7 +163,7 @@ func (r *Runner) removeImages(ctx context.Context, mode string, removed []engine
 		}
 		seen[image] = true
 		if err := r.Engine.DeleteImage(ctx, image); err != nil {
-			if errors.Is(err, engine.ErrNotFound) {
+			if engine.IsNotFound(err) {
 				continue
 			}
 			r.Console.Fail("Image", image, "Removing", err)

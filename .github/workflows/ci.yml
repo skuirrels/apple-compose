@@ -12,6 +12,12 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
       - run: make build
       - run: bin/apple-compose --help
