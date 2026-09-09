@@ -498,7 +498,7 @@ func (r *Runner) waitDependencies(ctx context.Context, s types.ServiceConfig) er
 				if err := r.waitHealthy(ctx, c, spec, c.Status.StartedDate); err != nil {
 					return fmt.Errorf("dependency failed to start: %w", err)
 				}
-				r.Console.Step("Container", c.ID, "Healthy")
+				r.stepOnce("healthy:"+c.ID, "Container", c.ID, "Healthy")
 			case types.ServiceConditionCompletedSuccessfully:
 				if err := r.waitCompleted(ctx, c); err != nil {
 					return err
@@ -621,7 +621,7 @@ func (r *Runner) waitAllHealthy(ctx context.Context, timeout time.Duration) erro
 			if err := r.waitHealthy(wctx, c, spec, c.Status.StartedDate); err != nil {
 				return err
 			}
-			r.Console.Step("Container", c.ID, "Healthy")
+			r.stepOnce("healthy:"+c.ID, "Container", c.ID, "Healthy")
 		}
 	}
 	return nil

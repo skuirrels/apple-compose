@@ -85,6 +85,17 @@ func (r *Runner) warnOnce(key, format string, args ...any) {
 	r.Console.Warn(format, args...)
 }
 
+// stepOnce reports a completed action a single time per process.
+func (r *Runner) stepOnce(key, kind, name, action string) {
+	r.warnMu.Lock()
+	seen := r.warned[key]
+	r.warned[key] = true
+	r.warnMu.Unlock()
+	if !seen {
+		r.Console.Step(kind, name, action)
+	}
+}
+
 // containers returns the project's containers, optionally including stopped ones.
 func (r *Runner) containers(ctx context.Context, all bool) ([]engine.Container, error) {
 	return r.Engine.ProjectContainers(ctx, r.Project.Name, all)

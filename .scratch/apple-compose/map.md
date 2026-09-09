@@ -20,6 +20,7 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 - [04 Naming, labels and state](issues/04-naming-labels-state.md): Docker Compose names and `com.docker.compose.*` labels; tool state under `~/Library/Application Support/apple-compose`.
 - [05 Plugin packaging](issues/05-plugin-packaging.md): standalone `apple-compose` binary, installable as `container compose` CLI plugin.
 - [07 Exit codes](issues/07-exit-codes.md): the runtime reports exit codes only to an attached client, so apple-compose attaches when it needs them and records them under its state directory.
+- [06 Core build](issues/06-core-build.md): product implemented, tested end to end, and published; release tooling in place.
 - [08 Shared named volumes](issues/08-shared-volumes.md): runtime volumes are single-attach disk images; multi-service volumes get a warning and can be backed by a host directory via Docker's `driver_opts` bind syntax or `x-apple-compose: {shared: true}`.
 
 ## Not yet specified
