@@ -96,7 +96,7 @@ apple-compose -f compose.yaml -f compose.override.yaml -p myproject --profile de
 | Command | Notes |
 | --- | --- |
 | `up`, `down`, `start`, `stop`, `restart`, `kill`, `rm`, `create` | Dependency ordering, `depends_on` conditions (`service_started`, `service_healthy`, `service_completed_successfully`), `--wait`, `--scale`, `--remove-orphans`, `--force-recreate`, `--exit-code-from`, `--abort-on-container-exit`, `--no-deps`, `--build`, `--pull`. Changed services are recreated using a config hash, unchanged ones are left alone. |
-| `ps`, `ls`, `images`, `port`, `top`, `logs` | `ps --format json`, `ps --health` (probes healthchecks on demand), `logs -f --tail`. |
+| `ps`, `ls`, `images`, `port`, `top`, `logs` | `ps --format json`, `ps --health` (probes healthchecks on demand), `logs -f --tail --since --until -t`. |
 | `exec`, `run`, `cp`, `wait` | `run --rm` one-off containers with dependencies started first. |
 | `pull`, `push`, `build` | `build` uses the runtime's BuildKit builder with `args`, `target`, `platforms`, `secrets`, `ssh`, `labels`, `no_cache`, `pull`. |
 | `config` | Renders the resolved project (`--services`, `--images`, `--hash`, `--format json`). |
@@ -137,7 +137,7 @@ Disable it per service with `x-apple-compose: {hosts_file: false}`.
 | `devices`, `sysctls`, `security_opt`, `pid`, `ipc`, `userns_mode`, `cgroup*`, `group_add`, `volumes_from`, `gpus`, `pids_limit`, `cpuset`, `logging` | Ignored with a warning. |
 | `cp` with a bind-mounted path | The runtime copies from the container's root filesystem only. |
 | `pause`, `unpause`, `events` | Not supported by the runtime. |
-| `logs --since/--until/--timestamps` | The runtime's log store has no timestamps. |
+| `logs --since/--until/--timestamps` | The runtime stores lines without times. `--timestamps` stamps each line with the time it was read; `--since`/`--until` include a container's stored output when it started inside the window and filter live output line by line. |
 
 ### The `x-apple-compose` extension
 
@@ -171,7 +171,9 @@ make test       # unit tests
 make e2e        # end-to-end tests against a running container runtime
 ```
 
-Decisions taken while charting the project live in `.scratch/apple-compose/`.
+Unit tests drive the orchestration code against a fake `container` executable (`internal/enginetest`), so they need no runtime; `make e2e` boots real containers.
+
+A feature matrix against the other compose tools for this runtime is in [docs/COMPARISON.md](docs/COMPARISON.md). Decisions taken while charting the project live in `.scratch/apple-compose/`.
 
 ## Licence
 

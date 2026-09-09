@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -10,7 +11,7 @@ import (
 
 func (a *App) logsCommand() *cobra.Command {
 	var o compose.LogsOptions
-	var tail string
+	var tail, since, until string
 	var noColor bool
 	cmd := &cobra.Command{
 		Use:   "logs [OPTIONS] [SERVICE...]",
@@ -32,10 +33,12 @@ func (a *App) logsCommand() *cobra.Command {
 			if noColor {
 				a.console.Colour = false
 			}
-			for _, name := range []string{"timestamps", "since", "until"} {
-				if fl := cmd.Flags().Lookup(name); fl != nil && fl.Changed {
-					a.console.Warn("--%s is not supported by the container runtime's log store and is ignored", name)
-				}
+			now := time.Now()
+			if o.Since, err = compose.ParseTime(since, now); err != nil {
+				return err
+			}
+			if o.Until, err = compose.ParseTime(until, now); err != nil {
+				return err
 			}
 			return a.runner(p).Logs(cmd.Context(), o)
 		},
@@ -46,8 +49,8 @@ func (a *App) logsCommand() *cobra.Command {
 	f.BoolVar(&o.NoLogPrefix, "no-log-prefix", false, "Don't print prefix in logs")
 	f.BoolVar(&noColor, "no-color", false, "Produce monochrome output")
 	f.IntVar(&o.Index, "index", 0, "index of the container if service has multiple replicas")
-	f.BoolP("timestamps", "t", false, "Show timestamps (not supported by the runtime)")
-	f.String("since", "", "Show logs since timestamp (not supported by the runtime)")
-	f.String("until", "", "Show logs before a timestamp (not supported by the runtime)")
+	f.BoolVarP(&o.Timestamps, "timestamps", "t", false, "Show timestamps (the time each line was read; the runtime stores lines without times)")
+	f.StringVar(&since, "since", "", "Show logs since timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)")
+	f.StringVar(&until, "until", "", "Show logs before a timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)")
 	return cmd
 }
