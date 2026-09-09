@@ -31,7 +31,8 @@ macOS asks once whether the runtime's helper (`container-runtime-linux`) may use
 
 ```bash
 brew tap skuirrels/apple-compose https://github.com/skuirrels/apple-compose
-brew install apple-compose
+brew trust skuirrels/apple-compose   # Homebrew 6+ refuses third-party taps until trusted
+brew install skuirrels/apple-compose/apple-compose
 ```
 
 Or download a release archive from the [releases page](https://github.com/skuirrels/apple-compose/releases), or build from source with Go 1.27+:
