@@ -294,3 +294,49 @@ func stateHome(t *testing.T) string {
 	}
 	return filepath.Join(home, "Library", "Application Support", "apple-compose")
 }
+
+func TestDockerCLIFrontEnd(t *testing.T) {
+	bin := binary(t)
+	docker := filepath.Join(filepath.Dir(bin), "apple-docker")
+	if _, err := os.Stat(docker); err != nil {
+		t.Fatalf("build apple-docker first with `make build`: %v", err)
+	}
+	c := &cli{t: t, bin: docker, dir: t.TempDir()}
+	t.Cleanup(func() { c.run("rm", "-f", "e2edocker") })
+	out := c.must("run", "-d", "--name", "e2edocker", "-e", "GREETING=hello", "-l", "suite=e2e", "alpine:3.20", "sh", "-c", "echo $GREETING; sleep 30")
+	if !strings.Contains(out, "e2edocker") {
+		t.Fatalf("run -d must print the container id:\n%s", out)
+	}
+	ps := c.must("ps", "--filter", "label=suite=e2e", "--format", "{{.Names}} {{.State}}")
+	if !strings.Contains(ps, "e2edocker running") {
+		t.Fatalf("ps: %s", ps)
+	}
+	ip := c.must("inspect", "-f", "{{.NetworkSettings.IPAddress}} {{.State.Running}}", "e2edocker")
+	if !strings.Contains(ip, "true") || !strings.Contains(ip, ".") {
+		t.Fatalf("inspect: %s", ip)
+	}
+	if got := c.must("exec", "e2edocker", "sh", "-c", "echo $GREETING"); !strings.Contains(got, "hello") {
+		t.Fatalf("exec: %s", got)
+	}
+	if got := c.must("logs", "e2edocker"); !strings.Contains(got, "hello") {
+		t.Fatalf("logs: %s", got)
+	}
+	if _, code := c.run("run", "--rm", "alpine:3.20", "sh", "-c", "exit 6"); code != 6 {
+		t.Fatalf("attached run must return the process exit code, got %d", code)
+	}
+	if got := c.must("stop", "-t", "1", "e2edocker"); strings.TrimSpace(got) != "e2edocker" {
+		t.Fatalf("stop must echo the name: %q", got)
+	}
+	if got := c.must("ps", "-a", "--filter", "name=e2edocker", "--format", "{{.Status}}"); !strings.Contains(got, "Exited") {
+		t.Fatalf("stopped status: %s", got)
+	}
+	if got := c.must("rm", "e2edocker"); strings.TrimSpace(got) != "e2edocker" {
+		t.Fatalf("rm must echo the name: %q", got)
+	}
+	if got := c.must("images", "--filter", "reference=alpine*", "--format", "{{.Repository}}:{{.Tag}}"); !strings.Contains(got, "alpine:3.20") {
+		t.Fatalf("images: %s", got)
+	}
+	if got := c.must("network", "ls", "--format", "{{.Name}}"); !strings.Contains(got, "default") {
+		t.Fatalf("network ls: %s", got)
+	}
+}

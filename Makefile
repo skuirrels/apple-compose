@@ -6,6 +6,7 @@ PREFIX  ?= /usr/local
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/apple-compose ./cmd/apple-compose
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/apple-docker ./cmd/apple-docker
 
 test:
 	go test ./...
@@ -25,6 +26,7 @@ e2e: build
 install: build
 	install -d $(PREFIX)/bin
 	install -m 0755 bin/apple-compose $(PREFIX)/bin/apple-compose
+	install -m 0755 bin/apple-docker $(PREFIX)/bin/apple-docker
 
 plugin: build
 	bin/apple-compose plugin install

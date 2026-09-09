@@ -1,6 +1,8 @@
 # apple-compose
 
-`docker compose` for [Apple's `container` runtime](https://github.com/apple/container) on macOS.
+`docker compose` and a `docker` command line for [Apple's `container` runtime](https://github.com/apple/container) on macOS.
+
+Two binaries ship together: `apple-compose`, the Compose implementation, and `apple-docker`, a Docker CLI front end that translates `docker run`, `ps`, `build`, `network`, `volume` and the rest onto the runtime, so `alias docker=apple-docker` keeps scripts and habits working.
 
 apple-compose reads standard Compose files (`compose.yaml`, `docker-compose.yml`, overrides, `.env`, profiles, `extends`, `include`) and runs them on Apple's native, VM-isolated Linux containers. It keeps Docker Compose's command names, flags, container names and labels, so existing projects and muscle memory carry over.
 
@@ -46,18 +48,18 @@ Upgrade later with `brew upgrade apple-compose`.
 Each [release](https://github.com/skuirrels/apple-compose/releases) ships a `darwin_arm64` archive and a `checksums.txt`. Pick a version, verify it, and place the binary on your `PATH`:
 
 ```bash
-VERSION=0.1.5
+VERSION=0.2.0
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/apple-compose_${VERSION}_darwin_arm64.tar.gz"
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/checksums.txt"
 grep "apple-compose_${VERSION}_darwin_arm64.tar.gz" checksums.txt | shasum -a 256 -c -
-tar -xzf "apple-compose_${VERSION}_darwin_arm64.tar.gz" apple-compose
-sudo install -m 0755 apple-compose /usr/local/bin/apple-compose
+tar -xzf "apple-compose_${VERSION}_darwin_arm64.tar.gz" apple-compose apple-docker
+sudo install -m 0755 apple-compose apple-docker /usr/local/bin/
 ```
 
 If you downloaded the archive with a browser rather than `curl`, macOS quarantines it; clear that before running:
 
 ```bash
-xattr -d com.apple.quarantine /usr/local/bin/apple-compose
+xattr -d com.apple.quarantine /usr/local/bin/apple-compose /usr/local/bin/apple-docker
 ```
 
 Release binaries are not yet signed. The release workflow signs and notarises them automatically once these repository secrets exist: `MACOS_SIGN_P12` (base64 Developer ID Application certificate), `MACOS_SIGN_PASSWORD`, and an App Store Connect API key as `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_KEY`.
@@ -85,6 +87,18 @@ The `container` CLI discovers plugins, so apple-compose can install itself as a 
 ```bash
 apple-compose plugin install
 container compose up -d
+```
+
+### Use it as `docker`
+
+`apple-docker` speaks Docker's CLI. Alias it, or symlink it as `docker`, and existing scripts run unchanged:
+
+```bash
+alias docker=apple-docker
+docker run -d --name web -p 8080:80 nginx:alpine
+docker ps --format '{{.Names}} {{.Status}}'
+docker exec -it web sh
+docker compose up -d
 ```
 
 ## Usage
@@ -158,6 +172,25 @@ volumes:
     x-apple-compose:
       shared: true              # host-directory backed, mountable by several services
 ```
+
+## The Docker CLI front end
+
+`apple-docker` accepts Docker's commands, flags and `--format` templates and translates them onto the `container` CLI. Attached commands (`run`, `exec`, `logs -f`, `build`, `pull`, `push`, `start -a`) hand the terminal straight to the runtime, so TTYs, signals and exit codes behave as with Docker. Listing commands read the runtime's JSON and print Docker's tables, `--format json`, and Go templates such as `{{.Names}}` or `{{.State.Status}}`.
+
+| Command group | Supported | Notes |
+| --- | --- | --- |
+| `run`, `create` | `-d`, `--rm`, `-it`, `--name`, `-p`, `-v`, `--mount`, `--tmpfs`, `-e`, `--env-file`, `-w`, `-u`, `-l`, `--network`, `--dns*`, `--entrypoint`, `--platform`, `--cpus`, `-m`, `--cap-add/drop`, `--privileged`, `--read-only`, `--init`, `--shm-size`, `--ulimit`, `--cidfile`, `--pull` | `--cpus` rounds up to whole CPUs; `--network host`, `-p 80` without a host port, and `--publish-all` are refused; `--restart` and `--hostname` warn; cgroup, device, healthcheck and logging flags are accepted and ignored with a warning. |
+| `ps`, `container ls` | `-a`, `-q`, `-n`, `-l`, `--no-trunc`, `--filter name/id/status/label/ancestor/network/volume`, `--format table/json/template` | `--size` is unavailable. |
+| `start`, `stop`, `restart`, `kill`, `rm`, `wait`, `port`, `top`, `cp`, `export`, `stats`, `logs`, `exec`, `attach` | Docker's flags | `wait` prints 0 because the runtime reports no exit code for detached containers; `attach` works only on stopped containers; `logs --since/--until` are ignored. |
+| `inspect` | containers, images, networks, volumes; `--format`, `--type` | Docker-shaped JSON (`.State`, `.Config`, `.NetworkSettings`, `.Mounts`, `.HostConfig`) with the runtime's full record under `.Runtime`. |
+| `images`, `pull`, `push`, `tag`, `rmi`, `build`, `image ls/rm/inspect/prune/save/load` | Docker's flags; `--filter reference=`, `--digests`, `--format` | `build -q` uses plain progress because the runtime's quiet mode hangs; `history` and `import` are unavailable. |
+| `network ls/create/rm/inspect/prune` | `--subnet`, `--internal`, `--label`, `-o`, filters, `--format` | `connect`/`disconnect` are impossible: the runtime attaches networks at create time. |
+| `volume ls/create/rm/inspect/prune` | `--label`, `--opt` (`size=` maps to the runtime's size), filters, `--format` | |
+| `system df/prune/info`, `info`, `version`, `login`, `logout` | | `prune` asks for confirmation like Docker; `login -p` feeds the runtime's stdin. |
+| `compose` | everything apple-compose does | Runs in-process. |
+| `pause`, `unpause`, `rename`, `commit`, `diff`, `events`, `update` | ❌ | Each explains why the runtime cannot do it. |
+
+Global Docker flags (`-H`, `--context`, `--config`, `-l`, `--tls*`) are accepted and ignored. `--dry-run` prints the translated `container` command instead of running it.
 
 ## Environment variables
 

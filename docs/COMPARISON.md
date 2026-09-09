@@ -6,10 +6,18 @@ Ratings come from reading each project's source and documentation on 9 September
 | --- | --- | --- | --- |
 | **Project** | | | |
 | Language / licence | Go / Apache-2.0 | Swift / AGPL-3.0 | Swift / MIT |
-| Scope | Compose only | Docker CLI clone + compose | Compose only |
+| Scope | Compose + Docker CLI front end (`apple-docker`) | Docker CLI clone + compose | Compose only |
 | Runtime as source of truth | ✅ | ❌ own state in `~/.mocker` | ✅ |
 | Installs as `container compose` plugin | ✅ | ❌ | ❌ |
 | Homebrew | ⚠️ tap | ✅ tap | ✅ core formula |
+| **Docker CLI** | | | |
+| run/create flag translation | ✅ exec into runtime, TTY and exit codes intact | ✅ own implementation | ❌ |
+| ps/images/network/volume with `--filter` and `--format` templates | ✅ Docker tables, json, Go templates | ⚠️ tables and json | ❌ |
+| inspect in Docker's JSON shape | ✅ `.State`, `.Config`, `.NetworkSettings` plus raw runtime record | ⚠️ own shape | ❌ |
+| build, pull, push, tag, rmi, save, load | ✅ | ✅ | ❌ |
+| manifest commands | ❌ | ✅ | ❌ |
+| system prune / df / info, login | ✅ | ⚠️ info, prune | ❌ |
+| `docker compose` delegation | ✅ in-process | ✅ | ❌ |
 | **Compose file** | | | |
 | Parser | ✅ compose-go (Docker's) | ⚠️ hand-rolled | ⚠️ hand-rolled |
 | `extends`, `include`, multi-file merge | ✅ | ❌ | ⚠️ partial |

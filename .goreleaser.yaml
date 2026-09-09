@@ -9,6 +9,14 @@ builds:
     goarch: [arm64]
     flags: [-trimpath]
     ldflags: ["-s -w -X main.version={{ .Version }}"]
+  - id: apple-docker
+    main: ./cmd/apple-docker
+    binary: apple-docker
+    env: [CGO_ENABLED=0]
+    goos: [darwin]
+    goarch: [arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -18,7 +26,7 @@ archives:
 notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
-      ids: [apple-compose]
+      ids: [apple-compose, apple-docker]
       sign:
         certificate: "{{ .Env.MACOS_SIGN_P12 }}"
         password: "{{ .Env.MACOS_SIGN_PASSWORD }}"

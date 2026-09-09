@@ -24,6 +24,7 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 - [09 Fresh volumes and database images](issues/09-fresh-volumes.md): runtime volumes carry `lost+found`; apple-compose empties a new volume with the first image that mounts it so postgres-style initialisation works.
 - [08 Shared named volumes](issues/08-shared-volumes.md): runtime volumes are single-attach disk images; multi-service volumes get a warning and can be backed by a host directory via Docker's `driver_opts` bind syntax or `x-apple-compose: {shared: true}`.
 - [10 Restart policies for detached containers](issues/10-restart-supervisor.md): a per-project background supervisor launched by `up -d`/`start`, locked with flock, honouring stop markers and `on-failure[:N]`.
+- [11 Docker CLI front end](issues/11-docker-cli.md): `apple-docker` translates Docker commands onto `container`, execs into it for attached commands, renders Docker tables/templates, no own state.
 
 ## Not yet specified
 
