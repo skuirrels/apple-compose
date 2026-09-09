@@ -3,6 +3,7 @@ package compose
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -21,7 +22,15 @@ func fakeContainer(t *testing.T, dir, id, service, state string, nets map[string
 		c.Configuration.Labels[project.LabelOneOff] = "True"
 	}
 	c.Status.State = state
-	for n, ip := range nets {
+	// Attachment order matters: the first network supplies the container's
+	// own address, as it does on the runtime, so iterate deterministically.
+	names := make([]string, 0, len(nets))
+	for n := range nets {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		ip := nets[n]
 		c.Configuration.Networks = append(c.Configuration.Networks, engine.NetworkConfig{Network: n})
 		if state == "running" {
 			c.Status.Networks = append(c.Status.Networks, engine.NetworkAttachment{Network: n, IPv4Address: ip + "/24", IPv4Gateway: "10.0.0.1"})
@@ -75,8 +84,10 @@ networks:
 	}
 
 	got := readHosts(t, filepath.Join(dir, "t-web-1"))
+	// web's own address comes from its first network, which the runtime
+	// and the fixture both take in name order: back before front.
 	for _, want := range []string{
-		"10.1.0.2\tt-web-1 web www",
+		"10.2.0.2\tt-web-1 web www",
 		"10.2.0.3\tdb t-db-1 pg database",
 		"10.0.0.1\thost.docker.internal gateway.docker.internal host.containers.internal gw",
 		"10.9.9.9\tfixed",
