@@ -15,13 +15,14 @@ import (
 // can look after them.
 const supervisedProject = compose.DockerProject
 
-// restartLabels tags a container for the supervisor.
-func restartLabels(policy, service string) []string {
-	return []string{
-		"--label", compose.LabelRestart + "=" + policy,
-		"--label", project.LabelProject + "=" + supervisedProject,
-		"--label", project.LabelService + "=" + service,
-		"--label", project.LabelOneOff + "=False",
+// managedLabels tag a container as one apple-docker looks after: the restart
+// supervisor and the hosts refresher both find theirs through the pseudo
+// project.
+func managedLabels(service string) map[string]string {
+	return map[string]string{
+		project.LabelProject: supervisedProject,
+		project.LabelService: service,
+		project.LabelOneOff:  "False",
 	}
 }
 

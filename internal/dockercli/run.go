@@ -3,13 +3,17 @@ package dockercli
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
+	"os"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/skuirrels/apple-compose/internal/compose"
 	"github.com/skuirrels/apple-compose/internal/engine"
 )
 
@@ -31,6 +35,8 @@ type runOptions struct {
 	mounts      []string
 	tmpfs       []string
 	networks    []string
+	netAliases  []string
+	addHosts    []string
 	dns         []string
 	dnsSearch   []string
 	dnsOption   []string
@@ -53,7 +59,7 @@ type runOptions struct {
 
 // ignoredRunFlags are Docker options the runtime cannot honour.
 var ignoredRunFlags = []string{
-	"add-host", "cgroup-parent", "cgroupns", "cpu-period", "cpu-quota", "cpu-shares", "cpuset-cpus", "cpuset-mems",
+	"cgroup-parent", "cgroupns", "cpu-period", "cpu-quota", "cpu-shares", "cpuset-cpus", "cpuset-mems",
 	"device", "device-read-bps", "device-write-bps", "domainname", "expose", "gpus", "group-add", "health-cmd",
 	"health-interval", "health-retries", "health-start-period", "health-timeout", "no-healthcheck", "ip", "ip6",
 	"ipc", "isolation", "kernel-memory", "link", "log-driver", "log-opt", "mac-address", "memory-reservation",
@@ -84,6 +90,8 @@ func addRunFlags(f *pflag.FlagSet, o *runOptions, create bool) {
 	f.StringArrayVar(&o.networks, "network", nil, "Connect a container to a network")
 	f.StringArrayVar(&o.networks, "net", nil, "Alias of --network")
 	_ = f.MarkHidden("net")
+	f.StringArrayVar(&o.netAliases, "network-alias", nil, "Add a network-scoped alias for the container")
+	f.StringArrayVar(&o.addHosts, "add-host", nil, "Add a custom host-to-IP mapping (host:ip)")
 	f.StringArrayVar(&o.dns, "dns", nil, "Set custom DNS servers")
 	f.StringArrayVar(&o.dnsSearch, "dns-search", nil, "Set custom DNS search domains")
 	f.StringArrayVar(&o.dnsOption, "dns-option", nil, "Set DNS options")
@@ -111,7 +119,7 @@ func addRunFlags(f *pflag.FlagSet, o *runOptions, create bool) {
 }
 
 // translateRun turns Docker run options into `container create/run` args.
-func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, command []string, verb string) ([]string, error) {
+func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, command []string, verb string) ([]string, string, error) {
 	args := []string{verb}
 	if o.name != "" {
 		args = append(args, "--name", o.name)
@@ -146,7 +154,7 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	for _, p := range o.publish {
 		spec, err := publishSpec(p)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		args = append(args, "--publish", spec)
 	}
@@ -169,13 +177,13 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	for _, n := range o.networks {
 		switch n {
 		case "host":
-			return nil, fmt.Errorf("--network host is not possible: containers run in their own virtual machines")
+			return nil, "", fmt.Errorf("--network host is not possible: containers run in their own virtual machines")
 		case "none":
 			args = append(args, "--network", "none")
 		case "bridge", "":
 		default:
 			if strings.HasPrefix(n, "container:") {
-				return nil, fmt.Errorf("--network %s is not possible on the container runtime", n)
+				return nil, "", fmt.Errorf("--network %s is not possible on the container runtime", n)
 			}
 			args = append(args, "--network", n)
 		}
@@ -202,7 +210,7 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	if o.cpus != "" {
 		n, err := strconv.ParseFloat(o.cpus, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid --cpus %q", o.cpus)
+			return nil, "", fmt.Errorf("invalid --cpus %q", o.cpus)
 		}
 		whole := int(math.Ceil(n))
 		if float64(whole) != n {
@@ -245,17 +253,33 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	if o.cidfile != "" {
 		args = append(args, "--cidfile", o.cidfile)
 	}
+	// Labels apple-compose adds for itself: the restart policy the supervisor
+	// honours, and the names the hosts refresher resolves.
+	service := o.name
+	if service == "" {
+		service = strings.NewReplacer("/", "-", ":", "-", "@", "-").Replace(image)
+	}
+	managed := map[string]string{}
 	if o.restart != "" && o.restart != "no" {
-		// apple-compose's supervisor honours the policy for detached
-		// containers; it finds them through these labels.
-		service := o.name
-		if service == "" {
-			service = strings.NewReplacer("/", "-", ":", "-", "@", "-").Replace(image)
-		}
-		args = append(args, restartLabels(o.restart, service)...)
+		managed = managedLabels(service)
+		managed[compose.LabelRestart] = o.restart
 		if verb == "run" && !o.detach {
 			a.warn("--restart %s applies once the container runs detached; this attached session ends when it exits", o.restart)
 		}
+	}
+	hostsPath, hostsLabels, err := a.hostsFileFor(o)
+	if err != nil {
+		return nil, "", err
+	}
+	if hostsPath != "" {
+		if len(managed) == 0 {
+			managed = managedLabels(service)
+		}
+		maps.Copy(managed, hostsLabels)
+		args = append(args, "--volume", hostsPath+":/etc/hosts")
+	}
+	for _, k := range slices.Sorted(maps.Keys(managed)) {
+		args = append(args, "--label", k+"="+managed[k])
 	}
 	if o.hostname != "" {
 		a.warn("--hostname is ignored: the container runtime derives the hostname from the container name")
@@ -263,7 +287,7 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	a.ignored(cmd, ignoredRunFlags...)
 	args = append(args, image)
 	args = append(args, command...)
-	return args, nil
+	return args, hostsPath, nil
 }
 
 // publishSpec validates Docker's -p forms. The runtime shares the syntax
@@ -290,17 +314,34 @@ func (a *App) runCommand() *cobra.Command {
 			if err := a.pullPolicy(cmd.Context(), o.pull, args[0]); err != nil {
 				return err
 			}
-			translated, err := a.translateRun(cmd, o, args[0], args[1:], "run")
+			verb := "run"
+			if needsHostsFile(o) && !o.detach {
+				// An attached container needs its hosts file filled in
+				// before it starts, and its own address published to peers
+				// once it has one, so create and start it in two steps
+				// rather than handing the terminal straight to the runtime.
+				verb = "create"
+			}
+			translated, hostsPath, err := a.translateRun(cmd, o, args[0], args[1:], verb)
 			if err != nil {
 				return err
 			}
-			if o.detach && o.restart != "" && o.restart != "no" {
-				// Stay in the process so the supervisor can be started
-				// once the container is running.
+			if verb == "create" {
+				return a.runInTwoSteps(cmd.Context(), o, translated)
+			}
+			supervised := o.detach && o.restart != "" && o.restart != "no"
+			if supervised || (o.detach && hostsPath != "") {
+				// Stay in the process so hosts files and the supervisor can
+				// be brought up to date once the container is running.
 				if err := a.runAttached(cmd.Context(), translated...); err != nil {
 					return err
 				}
-				a.ensureSupervisor(cmd.Context())
+				if hostsPath != "" {
+					a.refreshHosts(cmd.Context())
+				}
+				if supervised {
+					a.ensureSupervisor(cmd.Context())
+				}
 				return nil
 			}
 			return a.exec(translated...)
@@ -321,7 +362,7 @@ func (a *App) createCommand() *cobra.Command {
 			if err := a.pullPolicy(cmd.Context(), o.pull, args[0]); err != nil {
 				return err
 			}
-			translated, err := a.translateRun(cmd, o, args[0], args[1:], "create")
+			translated, hostsPath, err := a.translateRun(cmd, o, args[0], args[1:], "create")
 			if err != nil {
 				return err
 			}
@@ -332,12 +373,51 @@ func (a *App) createCommand() *cobra.Command {
 			if s := strings.TrimSpace(string(out)); s != "" {
 				fmt.Fprintln(a.console.Out, s)
 			}
+			if hostsPath != "" {
+				// Fill the file in now so the container can resolve its
+				// peers the moment someone starts it.
+				a.refreshHosts(cmd.Context())
+			}
 			return nil
 		},
 	}
 	cmd.Flags().SetInterspersed(false)
 	addRunFlags(cmd.Flags(), &o, true)
 	return cmd
+}
+
+// runInTwoSteps creates a container, then starts it with the terminal
+// attached, refreshing hosts files once it is up. It is how `run` handles a
+// container whose names have to be published to its neighbours.
+func (a *App) runInTwoSteps(ctx context.Context, o runOptions, create []string) error {
+	// --rm is the runtime's own flag on `run`; here the container outlives
+	// the create call, so it is removed once the session ends.
+	args := make([]string, 0, len(create))
+	for _, arg := range create[1:] {
+		if arg != "--rm" {
+			args = append(args, arg)
+		}
+	}
+	id, err := a.eng.Create(ctx, args...)
+	if err != nil {
+		return err
+	}
+	a.refreshHosts(ctx)
+	watch, stop := context.WithCancel(ctx)
+	defer stop()
+	go a.refreshWhenRunning(watch, id)
+	code, err := a.eng.Attach(ctx, id, a.in, os.Stdout, os.Stderr, o.interactive)
+	if err != nil {
+		return err
+	}
+	if o.remove {
+		if err := a.eng.Delete(ctx, []string{id}, true); err != nil {
+			a.warn("remove %s: %v", id, err)
+		}
+		a.pruneHostsFiles(ctx)
+	}
+	a.refreshHosts(ctx)
+	return exit(code)
 }
 
 // pullPolicy applies Docker's --pull before creating a container.

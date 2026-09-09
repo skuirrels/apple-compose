@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -245,6 +246,20 @@ func (a *App) startCommand() *cobra.Command {
 				if len(args) > 1 {
 					return errors.New("you cannot start and attach multiple containers at once")
 				}
+				clearStopped(args[0])
+				if a.hasHostsFile(cmd.Context(), args[0]) {
+					// Keep the process so peers learn the address once the
+					// container is up, as they would through Docker's DNS.
+					watch, stop := context.WithCancel(cmd.Context())
+					defer stop()
+					go a.refreshWhenRunning(watch, args[0])
+					code, err := a.eng.Attach(cmd.Context(), args[0], a.in, os.Stdout, os.Stderr, interactive)
+					if err != nil {
+						return err
+					}
+					a.refreshHosts(cmd.Context())
+					return exit(code)
+				}
 				sargs := []string{"start", "--attach"}
 				if interactive {
 					sargs = append(sargs, "--interactive")
@@ -253,6 +268,7 @@ func (a *App) startCommand() *cobra.Command {
 			}
 			clearStopped(args...)
 			err := a.each(args, func(name string) error { return a.eng.Start(cmd.Context(), name) })
+			a.refreshHosts(cmd.Context())
 			a.ensureSupervisor(cmd.Context())
 			return err
 		},
@@ -272,13 +288,15 @@ func (a *App) stopCommand() *cobra.Command {
 		Short: "Stop one or more running containers",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.each(args, func(name string) error {
+			err := a.each(args, func(name string) error {
 				if err := a.eng.Stop(cmd.Context(), []string{name}, signal, time.Duration(timeout)*time.Second); err != nil {
 					return err
 				}
 				markStopped(name)
 				return nil
 			})
+			a.refreshHosts(cmd.Context())
+			return err
 		},
 	}
 	cmd.Flags().IntVarP(&timeout, "time", "t", 10, "Seconds to wait before killing the container")
@@ -307,6 +325,7 @@ func (a *App) restartCommand() *cobra.Command {
 				clearStopped(name)
 				return a.eng.Start(cmd.Context(), name)
 			})
+			a.refreshHosts(cmd.Context())
 			a.ensureSupervisor(cmd.Context())
 			return err
 		},
@@ -323,13 +342,15 @@ func (a *App) killCommand() *cobra.Command {
 		Short: "Kill one or more running containers",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.each(args, func(name string) error {
+			err := a.each(args, func(name string) error {
 				if err := a.eng.Kill(cmd.Context(), []string{name}, signal); err != nil {
 					return err
 				}
 				markStopped(name)
 				return nil
 			})
+			a.refreshHosts(cmd.Context())
+			return err
 		},
 	}
 	cmd.Flags().StringVarP(&signal, "signal", "s", "KILL", "Signal to send to the container")
@@ -350,7 +371,10 @@ func (a *App) rmCommand() *cobra.Command {
 			if volumes {
 				a.warn("--volumes is ignored: the container runtime does not track anonymous volumes per container")
 			}
-			return a.each(args, func(name string) error { return a.eng.Delete(cmd.Context(), []string{name}, force) })
+			err := a.each(args, func(name string) error { return a.eng.Delete(cmd.Context(), []string{name}, force) })
+			a.refreshHosts(cmd.Context())
+			a.pruneHostsFiles(cmd.Context())
+			return err
 		},
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force the removal of a running container (uses SIGKILL)")

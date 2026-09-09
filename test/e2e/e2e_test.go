@@ -340,3 +340,38 @@ func TestDockerCLIFrontEnd(t *testing.T) {
 		t.Fatalf("network ls: %s", got)
 	}
 }
+
+func TestDockerRunResolvesNamesOnUserNetwork(t *testing.T) {
+	bin := binary(t)
+	docker := filepath.Join(filepath.Dir(bin), "apple-docker")
+	if _, err := os.Stat(docker); err != nil {
+		t.Fatalf("build apple-docker first with `make build`: %v", err)
+	}
+	c := &cli{t: t, bin: docker, dir: t.TempDir()}
+	const net = "e2enames"
+	t.Cleanup(func() {
+		c.run("rm", "-f", "e2eserver", "e2eclient")
+		c.run("network", "rm", net)
+	})
+	c.must("network", "create", net)
+	c.must("run", "-d", "--name", "e2eserver", "--network", net, "--network-alias", "api",
+		"alpine:3.20", "sh", "-c", "while true; do sleep 1; done")
+
+	// A container joining the network resolves the peers already on it, by
+	// name and by alias, and honours --add-host.
+	out, code := c.run("run", "--rm", "--network", net, "--add-host", "fixed:10.9.9.9",
+		"alpine:3.20", "sh", "-c", "getent hosts e2eserver && getent hosts api && getent hosts fixed")
+	if code != 0 {
+		t.Fatalf("names on a user-defined network must resolve (exit %d):\n%s", code, out)
+	}
+	if !strings.Contains(out, "10.9.9.9") {
+		t.Fatalf("--add-host must reach the container:\n%s", out)
+	}
+
+	// Containers already running learn about newcomers, as Docker's DNS
+	// would tell them.
+	c.must("run", "-d", "--name", "e2eclient", "--network", net, "alpine:3.20", "sh", "-c", "while true; do sleep 1; done")
+	if got := c.must("exec", "e2eserver", "getent", "hosts", "e2eclient"); !strings.Contains(got, "e2eclient") {
+		t.Fatalf("a running container must learn a newcomer's address:\n%s", got)
+	}
+}

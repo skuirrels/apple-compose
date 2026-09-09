@@ -9,6 +9,7 @@ import (
 
 	"github.com/skuirrels/apple-compose/internal/compose"
 	"github.com/skuirrels/apple-compose/internal/enginetest"
+	"github.com/skuirrels/apple-compose/internal/state"
 	"github.com/skuirrels/apple-compose/internal/ui"
 )
 
@@ -17,15 +18,20 @@ type harness struct {
 	fake *enginetest.Fake
 	out  *bytes.Buffer
 	err  *bytes.Buffer
+	home string
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	// Keep generated hosts files and stop markers out of the real state
+	// directory.
+	home := t.TempDir()
+	t.Setenv(state.EnvHome, home)
 	f := enginetest.New(t)
 	out, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
 	app := &App{version: "test", eng: f.Engine, console: &ui.Console{Out: out, Err: errBuf}, in: strings.NewReader("")}
 	app.execFn = func(bin string, args []string) error { return nil }
-	return &harness{app: app, fake: f, out: out, err: errBuf}
+	return &harness{app: app, fake: f, out: out, err: errBuf, home: home}
 }
 
 // run executes a command line and returns the process exit code.
@@ -62,7 +68,10 @@ func TestRunTranslatesDockerFlags(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d:\n%s", code, h.err)
 	}
-	want := "run --name web --detach --env A=1 --env-file .env --workdir /srv --user 1000:1000 --label tier=web --publish 8080:80 --publish 127.0.0.1:9000:9000/udp --volume /tmp:/host:ro --mount type=volume,source=data,target=/data --tmpfs /run --network front --dns 1.1.1.1 --entrypoint sh --cpus 2 --memory 512m --cap-add ALL --cap-add NET_ADMIN --read-only --init --shm-size 1g --ulimit nofile=1024:2048 --label com.apple-compose.restart=always --label com.docker.compose.project=apple-docker --label com.docker.compose.service=web --label com.docker.compose.oneoff=False alpine:3.20 sh -c echo hi"
+	// --network front is user-defined, so the container also gets a generated
+	// hosts file to resolve its neighbours by name.
+	hostsFile := filepath.Join(h.home, "projects", supervisedProject, "hosts", "web")
+	want := "run --name web --detach --env A=1 --env-file .env --workdir /srv --user 1000:1000 --label tier=web --publish 8080:80 --publish 127.0.0.1:9000:9000/udp --volume /tmp:/host:ro --mount type=volume,source=data,target=/data --tmpfs /run --network front --dns 1.1.1.1 --entrypoint sh --cpus 2 --memory 512m --cap-add ALL --cap-add NET_ADMIN --read-only --init --shm-size 1g --ulimit nofile=1024:2048 --volume " + hostsFile + ":/etc/hosts --label com.apple-compose.hosts-file=" + hostsFile + " --label com.apple-compose.names=1 --label com.apple-compose.restart=always --label com.docker.compose.oneoff=False --label com.docker.compose.project=apple-docker --label com.docker.compose.service=web alpine:3.20 sh -c echo hi"
 	// A detached run with a restart policy stays in-process so the
 	// supervisor can be started afterwards.
 	if got := h.fake.Call("run"); got != want {
@@ -106,7 +115,7 @@ func TestRunWithRestartStartsSupervisor(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(os.Getenv("APPLE_COMPOSE_HOME"), "projects", supervisedProject, "stopped", "web")); err == nil {
 		t.Fatal("start must clear the marker")
 	}
-	if code := h.run("run", "--restart", "always", "alpine"); code != 0 || h.execd() != "run --label com.apple-compose.restart=always --label com.docker.compose.project=apple-docker --label com.docker.compose.service=alpine --label com.docker.compose.oneoff=False alpine" {
+	if code := h.run("run", "--restart", "always", "alpine"); code != 0 || h.execd() != "run --label com.apple-compose.restart=always --label com.docker.compose.oneoff=False --label com.docker.compose.project=apple-docker --label com.docker.compose.service=alpine alpine" {
 		t.Fatalf("attached run with a policy must still exec: %q", h.execd())
 	}
 	if !strings.Contains(h.err.String(), "applies once the container runs detached") {
@@ -574,5 +583,88 @@ func TestDefaultResourcesApplyToRun(t *testing.T) {
 	}
 	if code := h.run("run", "-m", "512m", "--cpus", "1", "alpine"); code != 0 || h.execd() != "run --cpus 1 --memory 512m alpine" {
 		t.Fatalf("explicit limits must win: %q", h.execd())
+	}
+}
+
+func TestRunOnUserNetworkWritesHostsFile(t *testing.T) {
+	h := newHarness(t)
+	webHosts := filepath.Join(h.home, "projects", supervisedProject, "hosts", "web")
+	// A neighbour from a compose project, on the same user-defined network.
+	// Its own file predates the name labels, so this process must not
+	// rewrite it: it cannot know the names that service answers to.
+	dbHosts := filepath.Join(t.TempDir(), "db")
+	if err := os.WriteFile(dbHosts, []byte("written by an older version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.fake.On("ls --format json", "["+
+		enginetest.ContainerJSON("web", "web", supervisedProject, "running", "10.0.0.2", "app", map[string]string{
+			compose.LabelHostsFile:  webHosts,
+			compose.LabelExtraHosts: `{"gw":["host-gateway"]}`,
+		})+","+
+		enginetest.ContainerJSON("db", "db", "other", "running", "10.0.0.3", "app", map[string]string{
+			compose.LabelNetAliases: `{"app":["postgres"]}`,
+			compose.LabelHostsFile:  dbHosts,
+		})+"]", 0)
+	if code := h.run("run", "-d", "--name", "web", "--network", "app", "--network-alias", "api",
+		"--add-host", "gw:host-gateway", "alpine"); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	call := h.fake.Call("run --name web")
+	for _, want := range []string{
+		"--volume " + webHosts + ":/etc/hosts",
+		`--label com.apple-compose.net-aliases={"app":["api"]}`,
+		`--label com.apple-compose.extra-hosts={"gw":["host-gateway"]}`,
+	} {
+		if !strings.Contains(call, want) {
+			t.Fatalf("run is missing %q:\n%s", want, call)
+		}
+	}
+	got, err := os.ReadFile(webHosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The neighbour answers to its name and to its alias on that network,
+	// and --add-host resolves through the container's own gateway.
+	for _, want := range []string{"10.0.0.3\tdb postgres", "host.containers.internal gw"} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("hosts file is missing %q:\n%s", want, got)
+		}
+	}
+	if b, err := os.ReadFile(dbHosts); err != nil || !strings.HasPrefix(string(b), "written by an older version") {
+		t.Fatalf("a file whose names are not recorded in labels must be left alone: %q %v", b, err)
+	}
+}
+
+func TestAttachedRunOnUserNetworkStartsInTwoSteps(t *testing.T) {
+	h := newHarness(t)
+	h.fake.On("create", "abc123", 0)
+	if code := h.run("run", "--rm", "--network", "app", "alpine", "echo", "hi"); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	if h.execd() != "" {
+		t.Fatalf("a container with a hosts file must not hand the terminal to the runtime: %q", h.execd())
+	}
+	create := h.fake.Call("create")
+	if !strings.Contains(create, "--network app") || strings.Contains(create, "--rm") {
+		t.Fatalf("create must keep the network and drop --rm: %q", create)
+	}
+	if !h.fake.Called("start --attach abc123") {
+		t.Fatalf("container must be started attached: %v", h.fake.Calls())
+	}
+	if !h.fake.Called("delete") {
+		t.Fatalf("--rm must remove the container afterwards: %v", h.fake.Calls())
+	}
+}
+
+func TestRunWithoutUserNetworkKeepsExec(t *testing.T) {
+	h := newHarness(t)
+	if code := h.run("run", "--network", "bridge", "--network-alias", "api", "alpine"); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	if h.execd() == "" || strings.Contains(h.execd(), "/etc/hosts") {
+		t.Fatalf("the default network gets no hosts file: %q", h.execd())
+	}
+	if !strings.Contains(h.err.String(), "--network-alias is ignored") {
+		t.Fatalf("expected the alias warning:\n%s", h.err)
 	}
 }

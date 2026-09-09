@@ -14,7 +14,10 @@ import (
 func fakeContainer(t *testing.T, dir, id, service, state string, nets map[string]string, oneOff bool) engine.Container {
 	t.Helper()
 	c := engine.Container{ID: id}
+	// Both fixtures below load a project named t; the project label is what
+	// tells the renderer the compose file describes this container.
 	c.Configuration.Labels = map[string]string{
+		project.LabelProject: "t",
 		project.LabelService: service,
 		LabelHostsFile:       filepath.Join(dir, id),
 	}
@@ -79,7 +82,8 @@ networks:
 	lonely := fakeContainer(t, dir, "t-lonely-1", "lonely", "running", map[string]string{"t_other": "10.3.0.2"}, false)
 	stopped := fakeContainer(t, dir, "t-db-2", "db", "stopped", map[string]string{"t_back": ""}, false)
 	oneOff := fakeContainer(t, dir, "t-web-run-abc", "web", "running", map[string]string{"t_front": "10.1.0.9"}, true)
-	if err := r.writeHostsFiles([]engine.Container{web, db, lonely, stopped, oneOff}); err != nil {
+	cs := []engine.Container{web, db, lonely, stopped, oneOff}
+	if err := r.writeHostsFiles(cs, cs); err != nil {
 		t.Fatal(err)
 	}
 
@@ -149,11 +153,42 @@ networks:
 	dir := t.TempDir()
 	api := fakeContainer(t, dir, "t-api-1", "api", "running", map[string]string{"t_back": "10.2.0.2", "t_x_back": "10.3.0.2"}, false)
 	other := fakeContainer(t, dir, "t-other-1", "other", "running", map[string]string{"t_x_back": "10.3.0.3"}, false)
-	if err := r.writeHostsFiles([]engine.Container{api, other}); err != nil {
+	cs := []engine.Container{api, other}
+	if err := r.writeHostsFiles(cs, cs); err != nil {
 		t.Fatal(err)
 	}
 	got := readHosts(t, filepath.Join(dir, "t-other-1"))
 	if strings.Contains(got, "backend-api") {
 		t.Fatalf("alias on network back must not leak onto x_back via a suffix match:\n%s", got)
+	}
+}
+
+func TestHostsFilesUseLabelsForForeignContainers(t *testing.T) {
+	r, _ := loadRunner(t, `
+name: t
+services:
+  web:
+    image: img
+    networks: [front]
+networks:
+  front: {}
+`, nil)
+	dir := t.TempDir()
+	web := fakeContainer(t, dir, "t-web-1", "web", "running", map[string]string{"t_front": "10.1.0.2"}, false)
+	// A container apple-docker created on the same network: no compose
+	// service describes it, so its names come from its own labels.
+	foreign := fakeContainer(t, dir, "tool", "", "running", map[string]string{"t_front": "10.1.0.9"}, false)
+	foreign.Configuration.Labels[project.LabelProject] = DockerProject
+	foreign.Configuration.Labels[LabelHostname] = "toolbox"
+	foreign.Configuration.Labels[LabelNetAliases] = `{"t_front":["helper"]}`
+	cs := []engine.Container{web, foreign}
+	if err := r.writeHostsFiles(cs, cs); err != nil {
+		t.Fatal(err)
+	}
+	if got := readHosts(t, filepath.Join(dir, "t-web-1")); !strings.Contains(got, "10.1.0.9\ttool toolbox helper") {
+		t.Fatalf("a compose service must resolve its non-compose neighbour:\n%s", got)
+	}
+	if got := readHosts(t, filepath.Join(dir, "tool")); !strings.Contains(got, "10.1.0.2\tweb t-web-1") {
+		t.Fatalf("a non-compose container must resolve compose services:\n%s", got)
 	}
 }

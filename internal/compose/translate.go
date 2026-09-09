@@ -141,6 +141,11 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	}
 	if spec.hostsPath != "" && ext.HostsFile {
 		labels[LabelHostsFile] = spec.hostsPath
+		// The names this container answers to, recorded on the container
+		// itself so apple-docker can rewrite the file without the project.
+		for k, v := range HostsLabels(r.serviceExtras(s)) {
+			labels[k] = v
+		}
 	}
 	for k, v := range spec.labels {
 		labels[k] = v
