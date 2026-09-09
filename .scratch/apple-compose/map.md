@@ -28,11 +28,11 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 
 ## Not yet specified
 
-- Continuous health monitoring outside `up` (no daemon exists to run checks); `ps --health` probes on demand for now.
-- Port publishing could not be verified on the charting machine: unsigned third-party binaries get "no route to host" to container addresses while Apple-signed ones succeed, which is macOS Local Network privacy; the runtime helper needs that permission granted in System Settings.
-- Rosetta / amd64 image handling defaults when a compose file sets `platform`.
-- Secrets and configs beyond file-backed bind mounts (environment-backed secrets).
+- Continuous health monitoring outside `up`: the restart supervisor now runs per project and could probe healthchecks too; whether it should restart unhealthy containers as Docker's `autoheal` does.
+- Rosetta / amd64 image handling defaults when a compose file sets `platform` (`x-apple-compose: {rosetta: true}` exists; no automatic fallback).
 - Compose `develop.watch` file sync.
+- Gateway DNS: on a runtime installed without administrator rights the resolver at the network gateway never answers; `APPLE_COMPOSE_DNS` is the workaround, and whether a standard install needs it is unverified.
+- Signed releases: not possible without an Apple Developer Program membership; the pipeline is ready should one appear.
 
 ## Out of scope
 
