@@ -499,6 +499,18 @@ func TestGlobalFlagsAndDryRun(t *testing.T) {
 	}
 }
 
+func TestCleanPassesThrough(t *testing.T) {
+	h := newHarness(t)
+	if code := h.run("container", "clean", "web", "db"); code != 0 || h.fake.Call("clean") != "clean web db" {
+		t.Fatalf("container clean = %d %v", code, h.fake.Calls())
+	}
+	h.fake.Reset()
+	h.fake.On("ls --format json", "["+enginetest.ContainerJSON("web", "web", "p", "running", "10.0.0.2", "default", nil)+","+enginetest.ContainerJSON("buildkit", "", "", "running", "10.0.0.9", "default", map[string]string{"com.apple.container.resource.role": "builder"})+"]", 0)
+	if code := h.run("system", "clean"); code != 0 || h.fake.Call("clean") != "clean web" {
+		t.Fatalf("system clean must target running containers: %d %v", code, h.fake.Calls())
+	}
+}
+
 func TestFormatUnescapesDockerSequences(t *testing.T) {
 	h := newHarness(t)
 	h.fake.On("ls --format json", "["+enginetest.ContainerJSON("web", "web", "p", "running", "10.0.0.2", "default", nil)+"]", 0)

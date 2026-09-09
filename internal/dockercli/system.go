@@ -148,7 +148,7 @@ func (a *App) systemCommand() *cobra.Command {
 	prune.Flags().BoolVar(&volumes, "volumes", false, "Prune anonymous volumes")
 
 	events := a.unsupported("events", "Get real time events from the server", "the container runtime has no event stream")
-	cmd.AddCommand(df, prune, events, a.infoCommand(), a.versionCommand())
+	cmd.AddCommand(df, prune, events, a.infoCommand(), a.versionCommand(), a.cleanCommand())
 	return cmd
 }
 

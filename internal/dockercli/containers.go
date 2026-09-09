@@ -924,8 +924,40 @@ func (a *App) containerCommand() *cobra.Command {
 	cmd.AddCommand(ls, a.runCommand(), a.createCommand(), a.startCommand(), a.stopCommand(), a.restartCommand(),
 		a.killCommand(), a.rmCommand(), a.logsCommand(), a.execCommand(), a.waitCommand(), a.portCommand(),
 		a.cpCommand(), a.exportCommand(), a.statsCommand(), a.topCommand(), a.attachCommand(), prune,
-		a.containerInspectCommand())
+		a.containerInspectCommand(), a.cleanCommand())
 	return cmd
+}
+
+// cleanCommand exposes the runtime's `clean`, which trims unused blocks
+// from a container's disks to give space back to the host. Docker has no
+// equivalent, so this is an apple-docker extension.
+func (a *App) cleanCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "clean [CONTAINER...]",
+		Short: "Reclaim disk space from containers by trimming their filesystems (apple-docker extension)",
+		Long:  "Runs the runtime's `clean` on the named containers, or on every running container when none are given.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				cs, err := a.eng.ListContainers(cmd.Context(), false)
+				if err != nil {
+					return err
+				}
+				for _, c := range cs {
+					// The runtime's own helpers, such as the image builder,
+					// refuse trimming; only user containers are cleaned.
+					if c.Label("com.apple.container.resource.role") != "" {
+						continue
+					}
+					args = append(args, c.ID)
+				}
+				if len(args) == 0 {
+					fmt.Fprintln(a.console.Out, "No running containers to clean")
+					return nil
+				}
+			}
+			return a.runAttached(cmd.Context(), append([]string{"clean"}, args...)...)
+		},
+	}
 }
 
 func (a *App) containerInspectCommand() *cobra.Command {

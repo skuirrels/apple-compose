@@ -48,7 +48,7 @@ Upgrade later with `brew upgrade apple-compose`.
 Each [release](https://github.com/skuirrels/apple-compose/releases) ships a `darwin_arm64` archive and a `checksums.txt`. Pick a version, verify it, and place the binary on your `PATH`:
 
 ```bash
-VERSION=0.3.0
+VERSION=0.3.1
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/apple-compose_${VERSION}_darwin_arm64.tar.gz"
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/checksums.txt"
 grep "apple-compose_${VERSION}_darwin_arm64.tar.gz" checksums.txt | shasum -a 256 -c -
@@ -187,6 +187,7 @@ volumes:
 | `network ls/create/rm/inspect/prune` | `--subnet`, `--internal`, `--label`, `-o`, filters, `--format` | `connect`/`disconnect` are impossible: the runtime attaches networks at create time. |
 | `volume ls/create/rm/inspect/prune` | `--label`, `--opt` (`size=` maps to the runtime's size), filters, `--format` | |
 | `system df/prune/info`, `info`, `version`, `login`, `logout` | | `prune` asks for confirmation like Docker; `login -p` feeds the runtime's stdin. |
+| `container clean`, `system clean` | apple-docker extension | Runs the runtime's `clean` (1.4 or later), which trims unused blocks from container disks to give space back to the host. |
 | `compose` | everything apple-compose does | Runs in-process. |
 | `pause`, `unpause`, `rename`, `commit`, `diff`, `events`, `update` | ❌ | Each explains why the runtime cannot do it. |
 
