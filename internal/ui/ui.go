@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -93,6 +94,59 @@ func (c *Console) Warn(format string, args ...any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	fmt.Fprintf(c.Err, "%s %s\n", c.Paint("33", "warning:"), fmt.Sprintf(format, args...))
+}
+
+// HumanDuration renders an age the way Docker does.
+func HumanDuration(d time.Duration) string {
+	switch {
+	case d < time.Second:
+		return "Less than a second"
+	case d < 2*time.Second:
+		return "1 second"
+	case d < time.Minute:
+		return fmt.Sprintf("%d seconds", int(d.Seconds()))
+	case d < 2*time.Minute:
+		return "About a minute"
+	case d < time.Hour:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	case d < 2*time.Hour:
+		return "About an hour"
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	case d < 14*24*time.Hour:
+		return fmt.Sprintf("%d days", int(d.Hours()/24))
+	case d < 60*24*time.Hour:
+		return fmt.Sprintf("%d weeks", int(d.Hours()/(24*7)))
+	case d < 2*365*24*time.Hour:
+		return fmt.Sprintf("%d months", int(d.Hours()/(24*30)))
+	default:
+		return fmt.Sprintf("%d years", int(d.Hours()/(24*365)))
+	}
+}
+
+// DisplayImage strips the docker.io prefixes Docker hides.
+func DisplayImage(ref string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(ref, "docker.io/library/"), "docker.io/")
+}
+
+// SplitRef separates an image reference into repository and tag or digest.
+func SplitRef(ref string) (string, string) {
+	if i := strings.LastIndex(ref, "@"); i >= 0 {
+		return ref[:i], ref[i+1:]
+	}
+	slash := strings.LastIndex(ref, "/")
+	if i := strings.LastIndex(ref, ":"); i > slash {
+		return ref[:i], ref[i+1:]
+	}
+	return ref, "latest"
+}
+
+// Capitalise upper-cases the first letter of s.
+func Capitalise(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // Table prints rows aligned under headers.

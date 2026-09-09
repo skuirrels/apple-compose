@@ -42,6 +42,9 @@ type Runner struct {
 	// SpawnSupervisor launches the detached restart supervisor; nil uses
 	// this executable.
 	SpawnSupervisor SupervisorSpawner
+	// SupervisorFlags are extra global flags (env files, profiles) the
+	// supervisor needs to load the same project the caller did.
+	SupervisorFlags []string
 
 	warnMu sync.Mutex
 	warned map[string]bool
@@ -199,7 +202,9 @@ func (r *Runner) stopContainers(ctx context.Context, cs []engine.Container, over
 			}
 			continue
 		}
-		markStopped(r.Project.Name, g.ids)
+		if !r.Engine.DryRun {
+			markStopped(r.Project.Name, g.ids)
+		}
 		for _, id := range g.ids {
 			r.Console.Step("Container", id, "Stopped")
 		}

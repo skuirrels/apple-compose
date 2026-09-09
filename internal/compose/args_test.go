@@ -3,6 +3,7 @@ package compose
 import (
 	"bytes"
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,7 +70,7 @@ services:
     user: "1000:1000"
     ports:
       - "8080:80"
-      - "127.0.0.1:9000-9001:9000/udp"
+      - "127.0.0.1:9000-9001:9000-9001/udp"
     volumes:
       - ./site:/site:ro
       - data:/data
@@ -307,5 +308,26 @@ func TestDefaultDNSFromEnvironment(t *testing.T) {
 	}
 	if got := argsFor(t, r, "b"); strings.Contains(got, "1.1.1.1") || !strings.Contains(got, "--dns 9.9.9.9") {
 		t.Fatalf("service dns must win over the default: %s", got)
+	}
+}
+
+func TestPublishedRangeWithSingleTargetPicksOneFreePort(t *testing.T) {
+	busy, err := net.Listen("tcp", "0.0.0.0:47120")
+	if err != nil {
+		t.Skip("port 47120 unavailable")
+	}
+	defer busy.Close()
+	r, _ := loadRunner(t, "name: t\nservices:\n  a:\n    image: img\n    ports: [\"47120-47122:80\"]\n", nil)
+	got := argsFor(t, r, "a")
+	if !strings.Contains(got, "--publish 47121:80/tcp") || strings.Contains(got, "47120") || strings.Contains(got, ":81/") {
+		t.Fatalf("a host range must map one free port to the single target: %s", got)
+	}
+}
+
+func TestHealthcheckRetriesZeroMeansDefault(t *testing.T) {
+	r, _ := loadRunner(t, "name: t\nservices:\n  a:\n    image: img\n    healthcheck:\n      test: [\"CMD\", \"true\"]\n      retries: 0\n", nil)
+	a, _ := r.Project.GetService("a")
+	if spec := healthcheckFor(a); spec == nil || spec.retries != 3 {
+		t.Fatalf("retries 0 must fall back to 3, got %+v", spec)
 	}
 }

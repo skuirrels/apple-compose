@@ -8,8 +8,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/compose-spec/compose-go/v2/types"
-
 	"github.com/skuirrels/apple-compose/internal/engine"
 	"github.com/skuirrels/apple-compose/internal/project"
 	"github.com/skuirrels/apple-compose/internal/ui"
@@ -182,9 +180,4 @@ func slug() string {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
-}
-
-// oneOffService is a helper for building a spec from a service by name.
-func (r *Runner) service(name string) (types.ServiceConfig, error) {
-	return r.Project.GetService(name)
 }

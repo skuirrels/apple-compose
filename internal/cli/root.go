@@ -194,7 +194,17 @@ func isNoComposeFile(err error) bool {
 
 // runner builds a Runner for the project.
 func (a *App) runner(p *types.Project) *compose.Runner {
-	return compose.New(a.eng, p, a.console, a.version)
+	r := compose.New(a.eng, p, a.console, a.version)
+	for _, f := range a.g.envFiles {
+		r.SupervisorFlags = append(r.SupervisorFlags, "--env-file", f)
+	}
+	for _, pr := range a.g.profiles {
+		r.SupervisorFlags = append(r.SupervisorFlags, "--profile", pr)
+	}
+	if a.g.allServices {
+		r.SupervisorFlags = append(r.SupervisorFlags, "--all-resources")
+	}
+	return r
 }
 
 func exit(code int) error {

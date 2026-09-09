@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +51,9 @@ type UpOptions struct {
 	// Parallelism bounds how many services start at once. VM boots are
 	// heavy, so the default is modest.
 	Parallelism int
+	// Services names the services given on the command line; without
+	// AttachDependencies only these are attached to, as Docker does.
+	Services []string
 	// startTimeout bounds how long a container may take to report running.
 	StartTimeout time.Duration
 }
@@ -118,9 +123,6 @@ func (r *Runner) Up(ctx context.Context, o UpOptions) (int, error) {
 	)
 	if attached {
 		logs = ui.NewPrefixSet(r.Console, out, r.attachNames(o), o.NoLogPrefix)
-		// The foreground session restarts containers itself; a supervisor
-		// left by an earlier detached run must not compete with it.
-		r.StopSupervisor()
 	}
 
 	recreated := map[string]bool{}
@@ -128,7 +130,7 @@ func (r *Runner) Up(ctx context.Context, o UpOptions) (int, error) {
 	// attach processes must hang off the caller's context instead.
 	bg := ctx
 	visit := func(ctx context.Context, name string, s types.ServiceConfig) error {
-		if err := r.waitDependencies(ctx, s); err != nil {
+		if err := r.waitDependencies(ctx, s, o.Scale); err != nil {
 			return err
 		}
 		hash, err := ServiceHash(s)
@@ -280,8 +282,10 @@ func (r *Runner) createContainer(ctx context.Context, s types.ServiceConfig, num
 		r.Console.Fail("Container", name, "Creating", err)
 		return err
 	}
-	clearStopped(r.Project.Name, []string{name})
-	clearRestarts(r.Project.Name, []string{name})
+	if !r.Engine.DryRun {
+		clearStopped(r.Project.Name, []string{name})
+		clearRestarts(r.Project.Name, []string{name})
+	}
 	// Peers that are already running must be resolvable from the very
 	// first instruction of the new container, so its hosts file is filled
 	// in before it starts; its own address is added once it is running.
@@ -303,16 +307,19 @@ func startHint(err error) error {
 // for it to report an address so peers can be told about it.
 func (r *Runner) startContainer(ctx, bg context.Context, s types.ServiceConfig, name string, o UpOptions, logs *ui.PrefixSet, verb string) (*startRecord, error) {
 	rec := &startRecord{service: s, started: time.Now()}
-	clearStopped(r.Project.Name, []string{name})
 	if r.Engine.DryRun {
 		_, _ = r.Engine.Mutate(ctx, "start", name)
 		r.Console.Step("Container", name, verb)
 		return nil, nil
 	}
+	clearStopped(r.Project.Name, []string{name})
 	switch {
 	case logs != nil:
 		rec.exit = make(chan int, 1)
 		w := logs.Writer(s.Name)
+		// The foreground session restarts this container itself; the
+		// project's supervisor, if any, must leave it alone meanwhile.
+		markForeground(r.Project.Name, []string{name})
 		go r.attachLoop(bg, s, name, w, rec.exit, o)
 	case r.exitCodeNeeded(s.Name):
 		// A dependent waits for this container to complete successfully,
@@ -350,7 +357,13 @@ func (r *Runner) startContainer(ctx, bg context.Context, s types.ServiceConfig, 
 // code on done.
 func (r *Runner) attachLoop(ctx context.Context, s types.ServiceConfig, name string, w io.Writer, done chan<- int, o UpOptions) {
 	tracked := r.trackExit(name)
-	for {
+	defer clearForeground(r.Project.Name, []string{name})
+	for restarted := false; ; restarted = true {
+		if restarted {
+			// Peers must learn the new address once the container is up
+			// again; the first start is handled by startContainer.
+			go r.refreshWhenRunning(ctx, name, time.Now())
+		}
 		code, err := r.Engine.AttachBackground(ctx, name, w, w)
 		if err != nil {
 			fmt.Fprintf(r.Console.Err, "%s: %v\n", name, err)
@@ -378,6 +391,27 @@ func (r *Runner) attachLoop(ctx context.Context, s types.ServiceConfig, name str
 			done <- code
 			return
 		case <-time.After(time.Second):
+		}
+	}
+}
+
+// refreshWhenRunning waits for a container (re)started after `since` to
+// report an address, then rewrites the project's hosts files.
+func (r *Runner) refreshWhenRunning(ctx context.Context, name string, since time.Time) {
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		c, err := r.Engine.InspectContainer(ctx, name)
+		if err != nil {
+			return
+		}
+		if c.Running() && c.PrimaryIP() != "" && !c.Status.StartedDate.Before(since.Add(-time.Second)) {
+			_ = r.RefreshHosts(ctx)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
@@ -469,11 +503,11 @@ func (r *Runner) recordedExit(name string) (int, bool) {
 }
 
 // waitDependencies enforces depends_on conditions before a service starts.
-func (r *Runner) waitDependencies(ctx context.Context, s types.ServiceConfig) error {
+func (r *Runner) waitDependencies(ctx context.Context, s types.ServiceConfig, scale map[string]int) error {
 	if r.Engine.DryRun {
 		return nil
 	}
-	for _, dep := range sortedKeys(s.DependsOn) {
+	for _, dep := range slices.Sorted(maps.Keys(s.DependsOn)) {
 		d := s.DependsOn[dep]
 		ds, err := r.Project.GetService(dep)
 		if err != nil {
@@ -490,9 +524,13 @@ func (r *Runner) waitDependencies(ctx context.Context, s types.ServiceConfig) er
 		// Only the replicas this project expects count; stale extras
 		// left by an interrupted run are cleaned up when their service
 		// is visited.
+		replicas := ds.GetScale()
+		if n, ok := scale[dep]; ok {
+			replicas = n
+		}
 		var expected []engine.Container
 		for _, c := range cs {
-			if n := containerNumber(c); n >= 1 && n <= ds.GetScale() {
+			if n := containerNumber(c); n >= 1 && n <= replicas {
 				expected = append(expected, c)
 			}
 		}
@@ -658,6 +696,11 @@ func (r *Runner) attachNames(o UpOptions) []string {
 	only := map[string]bool{}
 	for _, n := range o.Attach {
 		only[n] = true
+	}
+	if len(only) == 0 && !o.AttachDependencies {
+		for _, n := range o.Services {
+			only[n] = true
+		}
 	}
 	for _, n := range serviceOrder(r.Project, r.Project.ServiceNames()) {
 		if skip[n] {

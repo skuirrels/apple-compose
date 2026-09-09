@@ -2,6 +2,8 @@ package compose
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/skuirrels/apple-compose/internal/engine"
@@ -112,7 +114,7 @@ func (r *Runner) removeNetworks(ctx context.Context) error {
 
 // removeVolumes deletes named volumes created for this project.
 func (r *Runner) removeVolumes(ctx context.Context) error {
-	for _, key := range sortedKeys(r.Project.Volumes) {
+	for _, key := range slices.Sorted(maps.Keys(r.Project.Volumes)) {
 		v := r.Project.Volumes[key]
 		if ext, ok := v.Extensions[ExtensionKey].(map[string]any); ok {
 			if shared, _ := ext["shared"].(bool); shared {

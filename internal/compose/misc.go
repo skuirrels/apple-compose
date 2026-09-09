@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,7 +69,7 @@ func (r *Runner) Restart(ctx context.Context, services []string, timeout time.Du
 				}
 			}
 		}
-		services = sortedKeys(set)
+		services = slices.Sorted(maps.Keys(set))
 	}
 	if err := r.Stop(ctx, services, timeout); err != nil {
 		return err
@@ -114,7 +116,9 @@ func (r *Runner) Kill(ctx context.Context, services []string, signal string) err
 	if err := r.Engine.Kill(ctx, ids(cs), signal); err != nil {
 		return err
 	}
-	markStopped(r.Project.Name, ids(cs))
+	if !r.Engine.DryRun {
+		markStopped(r.Project.Name, ids(cs))
+	}
 	for _, c := range cs {
 		r.Console.Step("Container", c.ID, "Killed")
 	}
@@ -164,7 +168,8 @@ func (r *Runner) Wait(ctx context.Context, services []string, downProject bool) 
 				if ec, ok := r.recordedExit(c.ID); ok && ec != 0 && code == 0 {
 					code = ec
 				}
-				fmt.Fprintf(r.Console.Out, "container %q exited with status code %d\n", c.ID, exitOrZero(r, c.ID))
+				recorded, _ := r.recordedExit(c.ID)
+				fmt.Fprintf(r.Console.Out, "container %q exited with status code %d\n", c.ID, recorded)
 			}
 			break
 		}
@@ -180,11 +185,6 @@ func (r *Runner) Wait(ctx context.Context, services []string, downProject bool) 
 		}
 	}
 	return code, nil
-}
-
-func exitOrZero(r *Runner, id string) int {
-	c, _ := r.recordedExit(id)
-	return c
 }
 
 // Images lists the images used by the project's containers.
@@ -212,8 +212,8 @@ func (r *Runner) Images(ctx context.Context, services []string, quiet bool, form
 	var rows []row
 	for _, c := range cs {
 		ref := c.Configuration.Image.Reference
-		repo, tag := splitRef(ref)
-		rw := row{Container: c.ID, Repository: displayImage(repo), Tag: tag}
+		repo, tag := ui.SplitRef(ref)
+		rw := row{Container: c.ID, Repository: ui.DisplayImage(repo), Tag: tag}
 		if img, ok := byName[ref]; ok {
 			rw.ID = strings.TrimPrefix(img.ID, "sha256:")
 			if len(rw.ID) > 12 {
@@ -249,17 +249,6 @@ func (r *Runner) Images(ctx context.Context, services []string, quiet bool, form
 		ui.Table(r.Console.Out, []string{"CONTAINER", "REPOSITORY", "TAG", "IMAGE ID", "SIZE"}, table)
 	}
 	return nil
-}
-
-func splitRef(ref string) (string, string) {
-	if i := strings.LastIndex(ref, "@"); i >= 0 {
-		return ref[:i], ref[i+1:]
-	}
-	slash := strings.LastIndex(ref, "/")
-	if i := strings.LastIndex(ref, ":"); i > slash {
-		return ref[:i], ref[i+1:]
-	}
-	return ref, "latest"
 }
 
 func humanBytes(b int64) string {
@@ -319,7 +308,7 @@ func ListProjects(ctx context.Context, e *engine.Engine, all bool) ([]ProjectSum
 	byProject := map[string]*counts{}
 	for _, c := range cs {
 		name := c.Label(project.LabelProject)
-		if name == "" {
+		if name == "" || name == DockerProject {
 			continue
 		}
 		cnt := byProject[name]
@@ -337,7 +326,7 @@ func ListProjects(ctx context.Context, e *engine.Engine, all bool) ([]ProjectSum
 		}
 	}
 	var out []ProjectSummary
-	for _, name := range sortedKeys(byProject) {
+	for _, name := range slices.Sorted(maps.Keys(byProject)) {
 		cnt := byProject[name]
 		if !all && cnt.running == 0 {
 			continue

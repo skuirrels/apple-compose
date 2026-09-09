@@ -56,11 +56,6 @@ func (r *Runner) Rows(ctx context.Context, o PsOptions) ([]PsRow, error) {
 	for i := range cs {
 		c := &cs[i]
 		svc := c.Label(project.LabelService)
-		if !o.Orphans {
-			if _, err := r.Project.GetService(svc); err != nil && len(r.Project.Services) > 0 && !o.All {
-				// Keep orphans visible: Docker lists them too.
-			}
-		}
 		state := c.Status.State
 		if state == "stopped" {
 			state = "exited"
@@ -71,7 +66,7 @@ func (r *Runner) Rows(ctx context.Context, o PsOptions) ([]PsRow, error) {
 		row := PsRow{
 			Name:      c.ID,
 			Service:   svc,
-			Image:     displayImage(c.Configuration.Image.Reference),
+			Image:     ui.DisplayImage(c.Configuration.Image.Reference),
 			Command:   c.Command(),
 			Project:   r.Project.Name,
 			State:     state,
@@ -94,7 +89,7 @@ func (r *Runner) Rows(ctx context.Context, o PsOptions) ([]PsRow, error) {
 		row.Restarts = restartCount(r.Project.Name, c.ID)
 		switch state {
 		case "running":
-			row.Status = "Up " + humanDuration(time.Since(c.Status.StartedDate))
+			row.Status = "Up " + ui.HumanDuration(time.Since(c.Status.StartedDate))
 			if row.Restarts > 0 {
 				row.Status += fmt.Sprintf(" (restarted %d)", row.Restarts)
 			}
@@ -115,7 +110,7 @@ func (r *Runner) Rows(ctx context.Context, o PsOptions) ([]PsRow, error) {
 				row.Status = "Exited"
 			}
 		default:
-			row.Status = strings.Title(state)
+			row.Status = ui.Capitalise(state)
 		}
 		rows = append(rows, row)
 	}
@@ -157,15 +152,11 @@ func (r *Runner) Ps(ctx context.Context, o PsOptions) error {
 	default:
 		var table [][]string
 		for _, row := range rows {
-			table = append(table, []string{row.Name, row.Image, quoteCommand(row.Command), row.Service, humanDuration(time.Since(row.Created)) + " ago", row.Status, strings.Join(row.Ports, ", ")})
+			table = append(table, []string{row.Name, row.Image, quoteCommand(row.Command), row.Service, ui.HumanDuration(time.Since(row.Created)) + " ago", row.Status, strings.Join(row.Ports, ", ")})
 		}
 		ui.Table(out, []string{"NAME", "IMAGE", "COMMAND", "SERVICE", "CREATED", "STATUS", "PORTS"}, table)
 	}
 	return nil
-}
-
-func displayImage(ref string) string {
-	return strings.TrimPrefix(strings.TrimPrefix(ref, "docker.io/library/"), "docker.io/")
 }
 
 func quoteCommand(cmd string) string {
@@ -173,26 +164,6 @@ func quoteCommand(cmd string) string {
 		cmd = cmd[:37] + "…"
 	}
 	return `"` + cmd + `"`
-}
-
-// humanDuration renders an age the way Docker does.
-func humanDuration(d time.Duration) string {
-	switch {
-	case d < time.Second:
-		return "Less than a second"
-	case d < time.Minute:
-		return fmt.Sprintf("%d seconds", int(d.Seconds()))
-	case d < 2*time.Minute:
-		return "About a minute"
-	case d < time.Hour:
-		return fmt.Sprintf("%d minutes", int(d.Minutes()))
-	case d < 2*time.Hour:
-		return "About an hour"
-	case d < 48*time.Hour:
-		return fmt.Sprintf("%d hours", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%d days", int(d.Hours()/24))
-	}
 }
 
 // findContainer returns the numbered replica of a service.

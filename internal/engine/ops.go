@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os/exec"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -252,7 +254,7 @@ func (e *Engine) CreateNetwork(ctx context.Context, name string, o NetworkOption
 	if o.Internal {
 		args = append(args, "--internal")
 	}
-	for _, k := range sortedKeys(o.Labels) {
+	for _, k := range slices.Sorted(maps.Keys(o.Labels)) {
 		args = append(args, "--label", k+"="+o.Labels[k])
 	}
 	_, err := e.Mutate(ctx, append(args, name)...)
@@ -290,10 +292,10 @@ func (e *Engine) InspectVolume(ctx context.Context, name string) (*Volume, error
 // CreateVolume creates a named volume. Driver options map to --opt.
 func (e *Engine) CreateVolume(ctx context.Context, name string, labels, opts map[string]string) error {
 	args := []string{"volume", "create"}
-	for _, k := range sortedKeys(labels) {
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
 		args = append(args, "--label", k+"="+labels[k])
 	}
-	for _, k := range sortedKeys(opts) {
+	for _, k := range slices.Sorted(maps.Keys(opts)) {
 		args = append(args, "--opt", k+"="+opts[k])
 	}
 	_, err := e.Mutate(ctx, append(args, name)...)
@@ -377,15 +379,6 @@ func (e *Engine) DeleteImage(ctx context.Context, ref string) error {
 func (e *Engine) Copy(ctx context.Context, src, dst string) error {
 	_, err := e.Mutate(ctx, "cp", src, dst)
 	return err
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // AttachBackground is Attach for a process that must not receive the

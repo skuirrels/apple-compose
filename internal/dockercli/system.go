@@ -132,15 +132,7 @@ func (a *App) systemCommand() *cobra.Command {
 					return err
 				}
 			}
-			np := a.networkCommand()
-			for _, c := range np.Commands() {
-				if c.Name() == "prune" {
-					_ = c.Flags().Set("force", "true")
-					c.SetContext(cmd.Context())
-					return c.RunE(c, nil)
-				}
-			}
-			return nil
+			return a.pruneNetworks(cmd.Context())
 		},
 	}
 	prune.Flags().BoolVarP(&all, "all", "a", false, "Remove all unused images not just dangling ones")

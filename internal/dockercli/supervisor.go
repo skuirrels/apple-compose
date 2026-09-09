@@ -13,7 +13,7 @@ import (
 // supervisedProject is the pseudo compose project that groups containers
 // created by `docker run --restart`, so apple-compose's restart supervisor
 // can look after them.
-const supervisedProject = "apple-docker"
+const supervisedProject = compose.DockerProject
 
 // restartLabels tags a container for the supervisor.
 func restartLabels(policy, service string) []string {
@@ -31,7 +31,7 @@ func (a *App) supervisorRunner() *compose.Runner {
 	r := compose.New(a.eng, p, a.console, a.version)
 	r.SpawnSupervisor = a.spawnFn
 	if r.SpawnSupervisor == nil {
-		r.SpawnSupervisor = func(name string, _ []string, _ string, logPath string) (int, error) {
+		r.SpawnSupervisor = func(name string, _ []string, logPath string) (int, error) {
 			exe, err := os.Executable()
 			if err != nil {
 				return 0, err

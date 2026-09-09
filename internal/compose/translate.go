@@ -2,10 +2,12 @@ package compose
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"net"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -143,7 +145,7 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	for k, v := range spec.labels {
 		labels[k] = v
 	}
-	for _, k := range sortedKeys(labels) {
+	for _, k := range slices.Sorted(maps.Keys(labels)) {
 		add("--label", k+"="+labels[k])
 	}
 
@@ -161,7 +163,7 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	}
 
 	// Environment: nil values are unresolved host variables, which Docker omits.
-	for _, k := range sortedKeys(s.Environment) {
+	for _, k := range slices.Sorted(maps.Keys(s.Environment)) {
 		if v := s.Environment[k]; v != nil {
 			add("--env", k+"="+*v)
 		}
@@ -272,7 +274,7 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	if s.ShmSize > 0 {
 		add("--shm-size", megabytes(int64(s.ShmSize)))
 	}
-	for _, name := range sortedKeys(s.Ulimits) {
+	for _, name := range slices.Sorted(maps.Keys(s.Ulimits)) {
 		u := s.Ulimits[name]
 		if u == nil {
 			continue
@@ -340,7 +342,7 @@ func processArgs(entrypoint, command []string, entrypointSet bool) ([]string, er
 
 func dependsOnLabel(s types.ServiceConfig) string {
 	var parts []string
-	for _, name := range sortedKeys(s.DependsOn) {
+	for _, name := range slices.Sorted(maps.Keys(s.DependsOn)) {
 		d := s.DependsOn[name]
 		parts = append(parts, fmt.Sprintf("%s:%s:%t", name, d.Condition, d.Required))
 	}
@@ -402,16 +404,41 @@ func publishSpecs(service string, p types.ServicePortConfig) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service %s: invalid published port %q", service, p.Published)
 	}
+	if hi > lo {
+		// compose-go expands equal-length ranges itself, so a range left
+		// here maps one container port to any free host port in it, as
+		// Docker does.
+		port, err := freePort(hostIP, lo, hi)
+		if err != nil {
+			return nil, fmt.Errorf("service %s: %w", service, err)
+		}
+		lo, hi = port, port
+	}
 	var out []string
 	for i := lo; i <= hi; i++ {
-		target := int(p.Target) + (i - lo)
-		spec := fmt.Sprintf("%d:%d/%s", i, target, proto)
+		spec := fmt.Sprintf("%d:%d/%s", i, p.Target, proto)
 		if hostIP != "" {
 			spec = hostIP + ":" + spec
 		}
 		out = append(out, spec)
 	}
 	return out, nil
+}
+
+// freePort returns the first host port in [lo, hi] that is not listening.
+func freePort(hostIP string, lo, hi int) (int, error) {
+	if hostIP == "" {
+		hostIP = "0.0.0.0"
+	}
+	for port := lo; port <= hi; port++ {
+		l, err := net.Listen("tcp", net.JoinHostPort(hostIP, strconv.Itoa(port)))
+		if err != nil {
+			continue
+		}
+		l.Close()
+		return port, nil
+	}
+	return 0, fmt.Errorf("no free host port in %d-%d", lo, hi)
 }
 
 func parseRange(v string) (int, int, error) {
@@ -575,6 +602,9 @@ func (r *Runner) writeStateFile(kind, name, content string) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(dir, kind+"-"+name)
+	if r.Engine.DryRun {
+		return path, nil
+	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return "", err
 	}
@@ -680,15 +710,6 @@ func (r *Runner) warnUnsupported(s types.ServiceConfig) {
 	}
 }
 
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // bindBackedVolume reports whether a top-level volume is backed by a host
 // directory rather than a runtime disk image. Two spellings are honoured:
 // Docker's local-driver bind options (`driver_opts: {type: none, o: bind,
@@ -748,7 +769,7 @@ func (r *Runner) warnSharedVolumes() {
 			}
 		}
 	}
-	for _, key := range sortedKeys(users) {
+	for _, key := range slices.Sorted(maps.Keys(users)) {
 		if len(users[key]) > 1 {
 			r.warnOnce("sharedvol:"+key, "volume %s is mounted by %s; the container runtime attaches a named volume to one running container at a time. Use a bind mount, or mark it shared with `x-apple-compose: {shared: true}` on the volume", key, strings.Join(users[key], ", "))
 		}

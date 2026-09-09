@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -74,7 +75,7 @@ func (a *App) configCommand() *cobra.Command {
 				}
 			case hash != "":
 				for _, name := range p.ServiceNames() {
-					if hash != "*" && !containsArg(splitComma(hash), name) {
+					if hash != "*" && !containsArg(strings.Split(hash, ","), name) {
 						continue
 					}
 					s, _ := p.GetService(name)
@@ -122,18 +123,4 @@ func (a *App) configCommand() *cobra.Command {
 	_ = f.MarkHidden("no-normalize")
 	_ = f.MarkHidden("no-consistency")
 	return cmd
-}
-
-func splitComma(s string) []string {
-	var out []string
-	cur := ""
-	for _, c := range s {
-		if c == ',' {
-			out = append(out, cur)
-			cur = ""
-			continue
-		}
-		cur += string(c)
-	}
-	return append(out, cur)
 }

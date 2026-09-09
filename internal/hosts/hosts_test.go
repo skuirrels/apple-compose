@@ -1,6 +1,7 @@
 package hosts
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,5 +44,42 @@ func TestWriteInPlaceKeepsInode(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	if !strings.Contains(string(b), "10.0.0.2\tdb") {
 		t.Fatalf("content not written: %s", b)
+	}
+}
+
+func TestWritePadsToStableSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hosts")
+	f := New()
+	f.Add("10.0.0.2", "db")
+	if err := f.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := os.Stat(path)
+	if st.Size() != 4096 {
+		t.Fatalf("first write must pad to 4096 bytes, got %d", st.Size())
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "10.0.0.2\tdb\n") || strings.Trim(string(b[len(f.Render()):]), "\n") != "" {
+		t.Fatalf("padding must be blank lines only: %q", b[len(b)-16:])
+	}
+	// Growing beyond one block pads to the next; shrinking keeps the size.
+	big := New()
+	for i := 0; i < 200; i++ {
+		big.Add(fmt.Sprintf("10.0.%d.%d", i/250, i%250), fmt.Sprintf("service-%d", i), fmt.Sprintf("alias-%d", i))
+	}
+	if err := big.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = os.Stat(path)
+	if st.Size()%4096 != 0 || st.Size() < 8192 {
+		t.Fatalf("large file must pad to a block multiple, got %d", st.Size())
+	}
+	grown := st.Size()
+	if err := f.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = os.Stat(path)
+	if st.Size() != grown {
+		t.Fatalf("a smaller rewrite must keep the size at %d, got %d", grown, st.Size())
 	}
 }

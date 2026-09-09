@@ -24,18 +24,6 @@ func TestNeedsRuntime(t *testing.T) {
 	}
 }
 
-func TestCutKVAndSplitComma(t *testing.T) {
-	if k, v, ok := cutKV("status=running"); !ok || k != "status" || v != "running" {
-		t.Error("cutKV")
-	}
-	if _, _, ok := cutKV("plain"); ok {
-		t.Error("cutKV without =")
-	}
-	if got := splitComma("a,b,c"); len(got) != 3 || got[2] != "c" {
-		t.Error("splitComma")
-	}
-}
-
 func TestConfigAndVersionWorkWithoutRuntime(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("name: cfg\nservices:\n  web:\n    image: alpine\n"), 0o644); err != nil {

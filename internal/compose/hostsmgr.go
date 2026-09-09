@@ -2,6 +2,8 @@ package compose
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 
@@ -21,6 +23,9 @@ func (r *Runner) hostsPathFor(name string) (string, error) {
 	path, err := state.HostsPath(r.Project.Name, name)
 	if err != nil {
 		return "", err
+	}
+	if r.Engine.DryRun {
+		return path, nil
 	}
 	return path, hosts.Ensure(path)
 }
@@ -93,7 +98,7 @@ func (r *Runner) writeHostsFiles(cs []engine.Container) error {
 		}
 		// Peers reachable on a shared network, in the order of this
 		// container's own networks.
-		for _, svc := range sortedKeys(byService) {
+		for _, svc := range slices.Sorted(maps.Keys(byService)) {
 			for _, peer := range byService[svc] {
 				if peer.ID == c.ID {
 					continue
@@ -107,7 +112,7 @@ func (r *Runner) writeHostsFiles(cs []engine.Container) error {
 				if peerSvc.Hostname != "" {
 					names = append(names, peerSvc.Hostname)
 				}
-				names = append(names, aliasesFor(peerSvc, c)...)
+				names = append(names, r.aliasesFor(peerSvc, c)...)
 				names = append(names, linkAliases(self, svc)...)
 				f.Add(ip, names...)
 			}
@@ -116,7 +121,7 @@ func (r *Runner) writeHostsFiles(cs []engine.Container) error {
 		if gateway != "" {
 			f.Add(gateway, hosts.HostAliases...)
 		}
-		for _, host := range sortedKeys(self.ExtraHosts) {
+		for _, host := range slices.Sorted(maps.Keys(self.ExtraHosts)) {
 			for _, addr := range self.ExtraHosts[host] {
 				if addr == hosts.HostGateway {
 					addr = gateway
@@ -167,22 +172,20 @@ func networksOf(c engine.Container) []string {
 }
 
 // aliasesFor returns the network aliases of a peer service on networks the
-// target container shares.
-func aliasesFor(peer types.ServiceConfig, target engine.Container) []string {
+// target container shares, in a stable order.
+func (r *Runner) aliasesFor(peer types.ServiceConfig, target engine.Container) []string {
 	var out []string
-	for key, cfg := range peer.Networks {
+	for _, key := range slices.Sorted(maps.Keys(peer.Networks)) {
+		cfg := peer.Networks[key]
 		if cfg == nil || len(cfg.Aliases) == 0 {
 			continue
 		}
-		name := key
-		if n, ok := peer.Networks[key]; ok && n != nil {
-			_ = n
+		name, err := project.NetworkName(r.Project, key)
+		if err != nil {
+			name = key
 		}
-		for _, att := range networksOf(target) {
-			if att == name || strings.HasSuffix(att, "_"+key) {
-				out = append(out, cfg.Aliases...)
-				break
-			}
+		if slices.Contains(networksOf(target), name) {
+			out = append(out, cfg.Aliases...)
 		}
 	}
 	return out

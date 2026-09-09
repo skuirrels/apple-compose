@@ -61,7 +61,7 @@ func healthcheckFor(s types.ServiceConfig) *healthSpec {
 	if hc.Timeout != nil {
 		spec.timeout = time.Duration(*hc.Timeout)
 	}
-	if hc.Retries != nil {
+	if hc.Retries != nil && *hc.Retries > 0 {
 		spec.retries = int(*hc.Retries)
 	}
 	if hc.StartPeriod != nil {

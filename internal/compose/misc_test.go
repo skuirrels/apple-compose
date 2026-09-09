@@ -11,6 +11,7 @@ import (
 
 	"github.com/skuirrels/apple-compose/internal/enginetest"
 	"github.com/skuirrels/apple-compose/internal/project"
+	"github.com/skuirrels/apple-compose/internal/ui"
 )
 
 const twoServices = `
@@ -202,9 +203,9 @@ func TestSplitRefAndHumanBytes(t *testing.T) {
 		{"ghcr.io/x/app:v1", "ghcr.io/x/app", "v1"},
 		{"app@sha256:abc", "app", "sha256:abc"},
 	} {
-		repo, tag := splitRef(tc.ref)
+		repo, tag := ui.SplitRef(tc.ref)
 		if repo != tc.repo || tag != tc.tag {
-			t.Errorf("splitRef(%q) = %q,%q want %q,%q", tc.ref, repo, tag, tc.repo, tc.tag)
+			t.Errorf("SplitRef(%q) = %q,%q want %q,%q", tc.ref, repo, tag, tc.repo, tc.tag)
 		}
 	}
 	for _, tc := range []struct {

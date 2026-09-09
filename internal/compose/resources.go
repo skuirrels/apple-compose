@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -18,7 +20,7 @@ import (
 // checks that external ones do.
 func (r *Runner) EnsureNetworks(ctx context.Context) error {
 	p := r.Project
-	for _, key := range sortedKeys(p.Networks) {
+	for _, key := range slices.Sorted(maps.Keys(p.Networks)) {
 		n := p.Networks[key]
 		name, err := project.NetworkName(p, key)
 		if err != nil {
@@ -67,7 +69,7 @@ func (r *Runner) EnsureNetworks(ctx context.Context) error {
 // EnsureVolumes creates the project's named volumes that do not exist yet.
 func (r *Runner) EnsureVolumes(ctx context.Context) error {
 	p := r.Project
-	for _, key := range sortedKeys(p.Volumes) {
+	for _, key := range slices.Sorted(maps.Keys(p.Volumes)) {
 		v := p.Volumes[key]
 		name, err := project.VolumeName(p, key)
 		if err != nil {
@@ -257,7 +259,7 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 	if b.DockerfileInline != "" {
 		return fmt.Errorf("service %s: dockerfile_inline is not supported; write a Dockerfile instead", s.Name)
 	}
-	for _, k := range sortedKeys(b.Args) {
+	for _, k := range slices.Sorted(maps.Keys(b.Args)) {
 		if v := b.Args[k]; v != nil {
 			args = append(args, "--build-arg", k+"="+*v)
 		}
@@ -282,7 +284,7 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 	if b.Pull || o.PullBuild {
 		args = append(args, "--pull")
 	}
-	for _, k := range sortedKeys(b.Labels) {
+	for _, k := range slices.Sorted(maps.Keys(b.Labels)) {
 		args = append(args, "--label", k+"="+b.Labels[k])
 	}
 	for _, sec := range b.Secrets {
@@ -308,11 +310,6 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 	if len(b.AdditionalContexts) > 0 {
 		r.warnOnce("build-ctx:"+s.Name, "service %s: build.additional_contexts are ignored", s.Name)
 	}
-	for _, tag := range b.Tags {
-		defer func(tag string) {
-			_, _ = r.Engine.Mutate(ctx, "image", "tag", image, tag)
-		}(tag)
-	}
 	// `container build --quiet` hangs on 1.3.1, so quiet builds discard the
 	// output here instead of asking the runtime to suppress it.
 	args = append(args, "--progress", "plain", ctxDir)
@@ -324,6 +321,12 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 	if err := r.Engine.Build(ctx, out, out, args...); err != nil {
 		r.Console.Fail("Image", image, "Building", err)
 		return err
+	}
+	for _, tag := range b.Tags {
+		if _, err := r.Engine.Mutate(ctx, "image", "tag", image, tag); err != nil {
+			r.Console.Fail("Image", tag, "Tagging", err)
+			return err
+		}
 	}
 	r.Console.Step("Image", image, "Built")
 	return nil

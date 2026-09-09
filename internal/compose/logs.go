@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/skuirrels/apple-compose/internal/engine"
-	"github.com/skuirrels/apple-compose/internal/project"
 	"github.com/skuirrels/apple-compose/internal/ui"
 )
 
@@ -224,6 +223,3 @@ func (r *Runner) Logs(ctx context.Context, o LogsOptions) error {
 	wg.Wait()
 	return nil
 }
-
-// serviceOf returns the service a container belongs to.
-func serviceOf(c engine.Container) string { return c.Label(project.LabelService) }

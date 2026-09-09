@@ -28,6 +28,7 @@ func (a *App) upCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			o.Services = args
 			o.Timeout = time.Duration(timeout) * time.Second
 			o.WaitTimeout = time.Duration(wait) * time.Second
 			o.Pull = compose.PullPolicy(pull)

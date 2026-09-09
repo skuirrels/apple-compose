@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -107,6 +106,5 @@ func (a *App) runCommand() *cobra.Command {
 	f.StringArrayVarP(&o.Volumes, "volume", "v", nil, "Bind mount a volume")
 	f.StringVarP(&o.WorkDir, "workdir", "w", "", "Working directory inside the container")
 	cmd.Example = "  apple-compose run --rm web sh\n  apple-compose run -d worker"
-	_ = fmt.Sprint
 	return cmd
 }

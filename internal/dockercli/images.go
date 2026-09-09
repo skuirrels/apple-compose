@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/skuirrels/apple-compose/internal/engine"
+	"github.com/skuirrels/apple-compose/internal/ui"
 )
 
 // imageRow is the shape Docker's `images --format json` prints.
@@ -37,14 +38,14 @@ func imageSize(img engine.Image) int64 {
 }
 
 func toImageRow(img engine.Image, noTrunc bool) imageRow {
-	repo, tag := splitRef(displayImage(img.Name()))
+	repo, tag := ui.SplitRef(ui.DisplayImage(img.Name()))
 	return imageRow{
 		Repository:   repo,
 		Tag:          tag,
 		ID:           shortID(img.ID, noTrunc),
 		Digest:       img.Configuration.Descriptor.Digest,
 		CreatedAt:    img.Configuration.CreationDate.Local().Format("2006-01-02 15:04:05 -0700 MST"),
-		CreatedSince: humanDuration(time.Since(img.Configuration.CreationDate)) + " ago",
+		CreatedSince: ui.HumanDuration(time.Since(img.Configuration.CreationDate)) + " ago",
 		Size:         humanSize(imageSize(img)),
 		Containers:   "N/A",
 		VirtualSize:  humanSize(imageSize(img)),
@@ -76,8 +77,8 @@ func matchImage(img engine.Image, filters map[string][]string) bool {
 		for _, v := range values {
 			switch key {
 			case "reference":
-				name := displayImage(img.Name())
-				repo, _ := splitRef(name)
+				name := ui.DisplayImage(img.Name())
+				repo, _ := ui.SplitRef(name)
 				ok = ok || name == v || repo == v || strings.HasPrefix(name, v) || globMatch(v, name)
 			case "dangling":
 				ok = ok || v == "false"
@@ -389,9 +390,9 @@ type imageInspectView struct {
 }
 
 func toImageInspect(img engine.Image) imageInspectView {
-	v := imageInspectView{Id: "sha256:" + strings.TrimPrefix(img.ID, "sha256:"), RepoTags: []string{displayImage(img.Name())}, Created: img.Configuration.CreationDate.UTC().Format(time.RFC3339Nano), Size: imageSize(img), Runtime: img}
+	v := imageInspectView{Id: "sha256:" + strings.TrimPrefix(img.ID, "sha256:"), RepoTags: []string{ui.DisplayImage(img.Name())}, Created: img.Configuration.CreationDate.UTC().Format(time.RFC3339Nano), Size: imageSize(img), Runtime: img}
 	if d := img.Configuration.Descriptor.Digest; d != "" {
-		repo, _ := splitRef(displayImage(img.Name()))
+		repo, _ := ui.SplitRef(ui.DisplayImage(img.Name()))
 		v.RepoDigests = []string{repo + "@" + d}
 	}
 	for _, variant := range img.Variants {

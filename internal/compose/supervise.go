@@ -22,6 +22,10 @@ import (
 // supervisor can honour it without reading the compose file.
 const LabelRestart = "com.apple-compose.restart"
 
+// DockerProject is the pseudo project grouping containers that apple-docker
+// created with a restart policy; `ls` leaves it out.
+const DockerProject = "apple-docker"
+
 // SuperviseOptions configure Supervise.
 type SuperviseOptions struct {
 	// Interval is the polling period; the runtime has no event stream.
@@ -87,7 +91,7 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 				active++
 				continue
 			}
-			if stoppedOnPurpose(r.Project.Name, c.ID) {
+			if stoppedOnPurpose(r.Project.Name, c.ID) || inForeground(r.Project.Name, c.ID) {
 				continue
 			}
 			code, known := r.recordedExit(c.ID)
@@ -126,9 +130,9 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 				delete(attached, id)
 				mu.Unlock()
 			}()
-			if _, err := r.waitRunning(ctx, id, 2*time.Minute); err == nil {
-				_ = r.RefreshHosts(ctx)
-			}
+			// Peers learn the new address once it is up; other containers
+			// are not kept waiting for this one to boot.
+			go r.refreshWhenRunning(ctx, id, time.Now())
 		}
 		if o.Once || active == 0 {
 			return nil
@@ -204,6 +208,44 @@ func (r *Runner) needsSupervisor(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
+// foregroundMarker records that an attached `up` session is looking after a
+// container itself, so the supervisor must not restart it meanwhile.
+func foregroundMarker(projectName, id string) string {
+	dir, err := state.ProjectDir(projectName)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "foreground", id)
+}
+
+func markForeground(projectName string, ids []string) {
+	for _, id := range ids {
+		p := foregroundMarker(projectName, id)
+		if p == "" {
+			continue
+		}
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		_ = os.WriteFile(p, nil, 0o644)
+	}
+}
+
+func clearForeground(projectName string, ids []string) {
+	for _, id := range ids {
+		if p := foregroundMarker(projectName, id); p != "" {
+			_ = os.Remove(p)
+		}
+	}
+}
+
+func inForeground(projectName, id string) bool {
+	p := foregroundMarker(projectName, id)
+	if p == "" {
+		return false
+	}
+	_, err := os.Stat(p)
+	return err == nil
+}
+
 // stopMarker is the file recording that apple-compose stopped a container on
 // purpose, so the supervisor leaves it alone.
 func stopMarker(projectName, id string) string {
@@ -250,25 +292,32 @@ func stoppedOnPurpose(projectName, id string) bool {
 }
 
 // SupervisorSpawner launches the background supervisor for a project and
-// returns its process id. The default runs this executable's hidden
-// `supervise` command as a daemon; tests substitute their own.
-type SupervisorSpawner func(projectName string, configFiles []string, workingDir, logPath string) (int, error)
+// returns its process id. cliArgs is the complete apple-compose command line
+// that reloads the caller's project and runs `supervise`. The default runs
+// this executable as a daemon; tests substitute their own.
+type SupervisorSpawner func(projectName string, cliArgs []string, logPath string) (int, error)
+
+// supervisorArgs builds the apple-compose command line that reloads this
+// runner's project exactly as the caller loaded it.
+func (r *Runner) supervisorArgs() []string {
+	args := []string{"--project-name", r.Project.Name}
+	for _, f := range r.Project.ComposeFiles {
+		args = append(args, "--file", f)
+	}
+	if r.Project.WorkingDir != "" {
+		args = append(args, "--project-directory", r.Project.WorkingDir)
+	}
+	args = append(args, r.SupervisorFlags...)
+	return append(args, "supervise")
+}
 
 // spawnSupervisor is the default SupervisorSpawner.
-func spawnSupervisor(projectName string, configFiles []string, workingDir, logPath string) (int, error) {
+func spawnSupervisor(_ string, cliArgs []string, logPath string) (int, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return 0, err
 	}
-	args := []string{"--project-name", projectName}
-	for _, f := range configFiles {
-		args = append(args, "--file", f)
-	}
-	if workingDir != "" {
-		args = append(args, "--project-directory", workingDir)
-	}
-	args = append(args, "supervise")
-	return SpawnDetached(exe, args, logPath)
+	return SpawnDetached(exe, cliArgs, logPath)
 }
 
 // SpawnDetached starts exe with args as a daemon in its own session, with
@@ -369,7 +418,7 @@ func (r *Runner) EnsureSupervisor(ctx context.Context) error {
 	if spawn == nil {
 		spawn = spawnSupervisor
 	}
-	pid, err := spawn(r.Project.Name, r.Project.ComposeFiles, r.Project.WorkingDir, logPath)
+	pid, err := spawn(r.Project.Name, r.supervisorArgs(), logPath)
 	if err != nil {
 		r.Console.Warn("restart policies are not supervised: %v", err)
 		return nil
@@ -396,9 +445,18 @@ func (r *Runner) StopSupervisor() {
 	if err != nil || pid <= 0 {
 		return
 	}
-	if err := syscall.Kill(pid, syscall.SIGTERM); err == nil {
-		r.Console.Step("Supervisor", r.Project.Name, "Stopped")
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		return
 	}
+	// Wait for the lock to drop so state removed next is not recreated by
+	// a supervisor still shutting down.
+	for i := 0; i < 50; i++ {
+		if running, err := supervisorRunning(r.Project.Name); err != nil || !running {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	r.Console.Step("Supervisor", r.Project.Name, "Stopped")
 }
 
 // restartLabel returns the value stored in LabelRestart for a service.

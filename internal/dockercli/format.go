@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/skuirrels/apple-compose/internal/ui"
 )
@@ -133,34 +132,6 @@ func shortID(id string, noTrunc bool) string {
 	return truncate(id, 12)
 }
 
-// humanDuration renders an age the way Docker does.
-func humanDuration(d time.Duration) string {
-	switch {
-	case d < time.Second:
-		return "Less than a second"
-	case d < 2*time.Second:
-		return "1 second"
-	case d < time.Minute:
-		return fmt.Sprintf("%d seconds", int(d.Seconds()))
-	case d < 2*time.Minute:
-		return "About a minute"
-	case d < time.Hour:
-		return fmt.Sprintf("%d minutes", int(d.Minutes()))
-	case d < 2*time.Hour:
-		return "About an hour"
-	case d < 48*time.Hour:
-		return fmt.Sprintf("%d hours", int(d.Hours()))
-	case d < 14*24*time.Hour:
-		return fmt.Sprintf("%d days", int(d.Hours()/24))
-	case d < 60*24*time.Hour:
-		return fmt.Sprintf("%d weeks", int(d.Hours()/(24*7)))
-	case d < 2*365*24*time.Hour:
-		return fmt.Sprintf("%d months", int(d.Hours()/(24*30)))
-	default:
-		return fmt.Sprintf("%d years", int(d.Hours()/(24*365)))
-	}
-}
-
 // humanSize renders bytes with Docker's units.
 func humanSize(b int64) string {
 	const unit = 1000.0
@@ -175,23 +146,6 @@ func humanSize(b int64) string {
 		i++
 	}
 	return fmt.Sprintf("%.3g%s", v, units[i])
-}
-
-// displayImage strips the docker.io prefixes Docker hides.
-func displayImage(ref string) string {
-	return strings.TrimPrefix(strings.TrimPrefix(ref, "docker.io/library/"), "docker.io/")
-}
-
-// splitRef separates a reference into repository and tag.
-func splitRef(ref string) (string, string) {
-	if i := strings.LastIndex(ref, "@"); i >= 0 {
-		return ref[:i], ref[i+1:]
-	}
-	slash := strings.LastIndex(ref, "/")
-	if i := strings.LastIndex(ref, ":"); i > slash {
-		return ref[:i], ref[i+1:]
-	}
-	return ref, "latest"
 }
 
 // parseFilters turns repeated --filter key=value flags into a map of lists.

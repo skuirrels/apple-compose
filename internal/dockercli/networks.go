@@ -1,6 +1,7 @@
 package dockercli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -206,35 +207,7 @@ func (a *App) networkCommand() *cobra.Command {
 			if !pruneForce && !a.confirm("WARNING! This will remove all custom networks not used by at least one container.\nAre you sure you want to continue?") {
 				return nil
 			}
-			nets, err := a.eng.ListNetworks(cmd.Context())
-			if err != nil {
-				return err
-			}
-			cs, err := a.eng.ListContainers(cmd.Context(), true)
-			if err != nil {
-				return err
-			}
-			used := map[string]bool{}
-			for _, c := range cs {
-				for _, n := range c.Configuration.Networks {
-					used[n.Network] = true
-				}
-			}
-			var removed []string
-			for _, n := range nets {
-				if n.ID == "default" || used[n.ID] || n.Label("com.apple.container.resource.role") == "builtin" {
-					continue
-				}
-				if err := a.eng.DeleteNetwork(cmd.Context(), n.ID); err != nil {
-					continue
-				}
-				removed = append(removed, n.ID)
-			}
-			if len(removed) > 0 {
-				fmt.Fprintln(a.console.Out, "Deleted Networks:")
-				fmt.Fprintln(a.console.Out, strings.Join(removed, "\n"))
-			}
-			return nil
+			return a.pruneNetworks(cmd.Context())
 		},
 	}
 	prune.Flags().BoolVarP(&pruneForce, "force", "f", false, "Do not prompt for confirmation")
@@ -244,6 +217,39 @@ func (a *App) networkCommand() *cobra.Command {
 		a.unsupported("disconnect", "Disconnect a container from a network", "the container runtime attaches networks only at create time"),
 	)
 	return cmd
+}
+
+// pruneNetworks removes custom networks no container is attached to.
+func (a *App) pruneNetworks(ctx context.Context) error {
+	nets, err := a.eng.ListNetworks(ctx)
+	if err != nil {
+		return err
+	}
+	cs, err := a.eng.ListContainers(ctx, true)
+	if err != nil {
+		return err
+	}
+	used := map[string]bool{}
+	for _, c := range cs {
+		for _, n := range c.Configuration.Networks {
+			used[n.Network] = true
+		}
+	}
+	var removed []string
+	for _, n := range nets {
+		if n.ID == "default" || used[n.ID] || n.Label("com.apple.container.resource.role") == "builtin" {
+			continue
+		}
+		if err := a.eng.DeleteNetwork(ctx, n.ID); err != nil {
+			continue
+		}
+		removed = append(removed, n.ID)
+	}
+	if len(removed) > 0 {
+		fmt.Fprintln(a.console.Out, "Deleted Networks:")
+		fmt.Fprintln(a.console.Out, strings.Join(removed, "\n"))
+	}
+	return nil
 }
 
 func matchNetwork(n engine.Network, filters map[string][]string) bool {

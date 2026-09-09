@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -114,7 +115,7 @@ func (a *App) buildCommand() *cobra.Command {
 					continue
 				}
 				for _, kv := range buildArgs {
-					k, v, _ := cutKV(kv)
+					k, v, _ := strings.Cut(kv, "=")
 					if s.Build.Args == nil {
 						s.Build.Args = map[string]*string{}
 					}

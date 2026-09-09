@@ -79,7 +79,7 @@ func TestRunWithRestartStartsSupervisor(t *testing.T) {
 	h := newHarness(t)
 	t.Setenv("APPLE_COMPOSE_HOME", t.TempDir())
 	var spawned []string
-	h.app.spawnFn = func(name string, _ []string, _ string, log string) (int, error) {
+	h.app.spawnFn = func(name string, _ []string, log string) (int, error) {
 		spawned = append(spawned, name+" "+log)
 		return 99, nil
 	}
@@ -552,5 +552,15 @@ func TestDefaultDNSAppliesToRunAndBuild(t *testing.T) {
 	}
 	if code := h.run("build", "."); code != 0 || h.execd() != "build --dns 1.1.1.1 --dns 8.8.8.8 ." {
 		t.Fatalf("build must carry the default nameservers: %q", h.execd())
+	}
+}
+
+func TestTmpfsOptionsWarn(t *testing.T) {
+	h := newHarness(t)
+	if code := h.run("run", "--tmpfs", "/run:size=64m", "alpine"); code != 0 || h.execd() != "run --tmpfs /run alpine" {
+		t.Fatalf("tmpfs = %q", h.execd())
+	}
+	if !strings.Contains(h.err.String(), "options \"size=64m\" are ignored") {
+		t.Fatalf("expected tmpfs warning:\n%s", h.err)
 	}
 }

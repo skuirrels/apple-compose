@@ -17,6 +17,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // ErrNotFound is returned when the runtime has no resource with the given id.
@@ -173,6 +175,10 @@ func (e *Engine) Run(ctx context.Context, stdin io.Reader, stdout, stderr io.Wri
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	// Long pulls and builds show their progress when a person is watching.
+	if f, ok := stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		cmd.Env = append(cmd.Env, "CONTAINER_PROGRESS=auto")
+	}
 	err := cmd.Run()
 	if err == nil {
 		return 0, nil

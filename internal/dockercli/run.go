@@ -49,8 +49,6 @@ type runOptions struct {
 	restart     string
 	hostname    string
 	pull        string
-	// Docker flags with no equivalent, accepted so scripts keep working.
-	ignoredStrings []string
 }
 
 // ignoredRunFlags are Docker options the runtime cannot honour.
@@ -162,7 +160,11 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 		args = append(args, "--mount", m)
 	}
 	for _, t := range o.tmpfs {
-		args = append(args, "--tmpfs", strings.SplitN(t, ":", 2)[0])
+		path, opts, hasOpts := strings.Cut(t, ":")
+		if hasOpts {
+			a.warn("--tmpfs %s: options %q are ignored; the container runtime mounts tmpfs with defaults", path, opts)
+		}
+		args = append(args, "--tmpfs", path)
 	}
 	for _, n := range o.networks {
 		switch n {

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/skuirrels/apple-compose/internal/engine"
+	"github.com/skuirrels/apple-compose/internal/ui"
 )
 
 // psRow is the shape Docker's `ps --format json` prints.
@@ -47,14 +47,14 @@ func containerState(c engine.Container) string {
 func containerStatus(c engine.Container) string {
 	switch containerState(c) {
 	case "running":
-		return "Up " + humanDuration(time.Since(c.Status.StartedDate))
+		return "Up " + ui.HumanDuration(time.Since(c.Status.StartedDate))
 	case "exited":
 		if c.Status.StartedDate.IsZero() {
 			return "Created"
 		}
 		return "Exited"
 	default:
-		return strings.ToUpper(c.Status.State[:1]) + c.Status.State[1:]
+		return ui.Capitalise(c.Status.State)
 	}
 }
 
@@ -104,10 +104,10 @@ func toPsRow(c engine.Container, noTrunc bool) psRow {
 	}
 	return psRow{
 		ID:         c.ID,
-		Image:      displayImage(c.Configuration.Image.Reference),
+		Image:      ui.DisplayImage(c.Configuration.Image.Reference),
 		Command:    `"` + cmd + `"`,
 		CreatedAt:  c.Configuration.CreationDate.Local().Format("2006-01-02 15:04:05 -0700 MST"),
-		RunningFor: humanDuration(time.Since(c.Configuration.CreationDate)) + " ago",
+		RunningFor: ui.HumanDuration(time.Since(c.Configuration.CreationDate)) + " ago",
 		Ports:      portsOf(c),
 		State:      containerState(c),
 		Status:     containerStatus(c),
@@ -151,7 +151,7 @@ func matchContainer(c engine.Container, filters map[string][]string) bool {
 			case "label":
 				ok = ok || matchLabel(c.Configuration.Labels, v)
 			case "ancestor":
-				ok = ok || displayImage(c.Configuration.Image.Reference) == displayImage(v) || strings.HasPrefix(displayImage(c.Configuration.Image.Reference), displayImage(v)+":")
+				ok = ok || ui.DisplayImage(c.Configuration.Image.Reference) == ui.DisplayImage(v) || strings.HasPrefix(ui.DisplayImage(c.Configuration.Image.Reference), ui.DisplayImage(v)+":")
 			case "network":
 				for _, n := range c.Configuration.Networks {
 					ok = ok || n.Network == v
@@ -399,12 +399,16 @@ func (a *App) logsCommand() *cobra.Command {
 				_ = c.Wait()
 				pw.Close()
 			}()
-			sc := bufio.NewScanner(pr)
-			sc.Buffer(make([]byte, 1024*1024), 1024*1024)
-			for sc.Scan() {
-				fmt.Fprintf(a.console.Out, "%s %s\n", time.Now().UTC().Format(time.RFC3339Nano), sc.Text())
+			rd := bufio.NewReader(pr)
+			for {
+				line, err := rd.ReadString('\n')
+				if line != "" {
+					fmt.Fprintf(a.console.Out, "%s %s\n", time.Now().UTC().Format(time.RFC3339Nano), strings.TrimSuffix(line, "\n"))
+				}
+				if err != nil {
+					return nil
+				}
 			}
-			return nil
 		},
 	}
 	f := cmd.Flags()
@@ -977,5 +981,3 @@ func (a *App) containerInspectCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&format, "format", "f", "", "Format output using a custom template")
 	return cmd
 }
-
-var _ = os.Stdout

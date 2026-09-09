@@ -513,3 +513,78 @@ func TestStartHintExplainsVolumeAttachment(t *testing.T) {
 type errFrom string
 
 func (e errFrom) Error() string { return string(e) }
+
+func TestAttachNamesFollowSelectedServices(t *testing.T) {
+	r, _ := loadRunner(t, `
+name: t
+services:
+  web:
+    image: img
+    depends_on: [db]
+  db:
+    image: img
+`, nil)
+	if got := strings.Join(r.attachNames(UpOptions{Services: []string{"web"}}), ","); got != "web" {
+		t.Fatalf("up web must attach to web only, got %q", got)
+	}
+	if got := strings.Join(r.attachNames(UpOptions{Services: []string{"web"}, AttachDependencies: true}), ","); got != "db,web" {
+		t.Fatalf("--attach-dependencies must include db, got %q", got)
+	}
+}
+
+func TestWaitDependenciesHonoursScaleOverride(t *testing.T) {
+	r, f, _ := upFixture(t, `
+name: t
+services:
+  web:
+    image: docker.io/library/alpine:3.20
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: docker.io/library/alpine:3.20
+    healthcheck:
+      test: ["CMD", "true"]
+      retries: 1
+      interval: 1ms
+`)
+	f.On("ls --format json --all", "["+
+		running("t-db-1", "db", "t", nil)+","+
+		running("t-db-2", "db", "t", map[string]string{project.LabelContainerNumber: "2"})+
+		"]", 0)
+	f.On("exec t-db-2 true", "", 1)
+	web, _ := r.Project.GetService("web")
+	if err := r.waitDependencies(context.Background(), web, nil); err != nil {
+		t.Fatalf("without --scale only replica 1 counts: %v", err)
+	}
+	if err := r.waitDependencies(context.Background(), web, map[string]int{"db": 2}); err == nil || !strings.Contains(err.Error(), "unhealthy") {
+		t.Fatalf("with --scale db=2 the failing second replica must count: %v", err)
+	}
+}
+
+func TestBuildTagsOnlyAfterSuccess(t *testing.T) {
+	r, f, _ := upFixture(t, `
+name: t
+services:
+  app:
+    build:
+      context: .
+      tags: [extra:1]
+`)
+	f.On("build", "boom", 1)
+	app, _ := r.Project.GetService("app")
+	if err := r.BuildService(context.Background(), app, ImageOptions{Quiet: true}); err == nil {
+		t.Fatal("failed build must return an error")
+	}
+	if f.Called("image tag") {
+		t.Fatalf("a failed build must not be tagged: %v", f.Calls())
+	}
+	f.Reset()
+	f.On("build", "", 0)
+	if err := r.BuildService(context.Background(), app, ImageOptions{Quiet: true}); err != nil {
+		t.Fatal(err)
+	}
+	if f.Call("image tag") != "image tag t-app extra:1" {
+		t.Fatalf("successful build must apply tags: %v", f.Calls())
+	}
+}

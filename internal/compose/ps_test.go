@@ -81,20 +81,20 @@ func TestHelpers(t *testing.T) {
 		72 * time.Hour:         "3 days",
 	}
 	for d, want := range cases {
-		if got := humanDuration(d); got != want {
-			t.Errorf("humanDuration(%s) = %q, want %q", d, got, want)
+		if got := ui.HumanDuration(d); got != want {
+			t.Errorf("HumanDuration(%s) = %q, want %q", d, got, want)
 		}
 	}
-	if repo, tag := splitRef("ghcr.io/x/y:1.2"); repo != "ghcr.io/x/y" || tag != "1.2" {
-		t.Error("splitRef tag")
+	if repo, tag := ui.SplitRef("ghcr.io/x/y:1.2"); repo != "ghcr.io/x/y" || tag != "1.2" {
+		t.Error("SplitRef tag")
 	}
-	if repo, tag := splitRef("localhost:5000/img"); repo != "localhost:5000/img" || tag != "latest" {
-		t.Error("splitRef registry port")
+	if repo, tag := ui.SplitRef("localhost:5000/img"); repo != "localhost:5000/img" || tag != "latest" {
+		t.Error("SplitRef registry port")
 	}
 	if humanBytes(4093973) != "3.9MB" || humanBytes(512) != "512B" {
 		t.Error("humanBytes")
 	}
-	if displayImage("docker.io/library/alpine:3.20") != "alpine:3.20" || displayImage("docker.io/foo/bar") != "foo/bar" {
+	if ui.DisplayImage("docker.io/library/alpine:3.20") != "alpine:3.20" || ui.DisplayImage("docker.io/foo/bar") != "foo/bar" {
 		t.Error("displayImage")
 	}
 }

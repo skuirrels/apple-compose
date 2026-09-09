@@ -129,3 +129,31 @@ func TestHostnameOfAndSharedIP(t *testing.T) {
 		t.Fatalf("expected first network of a to win, got %s", ip)
 	}
 }
+
+func TestAliasesMatchResolvedNetworkNames(t *testing.T) {
+	r, _ := loadRunner(t, `
+name: t
+services:
+  api:
+    image: img
+    networks:
+      back:
+        aliases: [backend-api]
+  other:
+    image: img
+    networks: [x_back]
+networks:
+  back: {}
+  x_back: {}
+`, nil)
+	dir := t.TempDir()
+	api := fakeContainer(t, dir, "t-api-1", "api", "running", map[string]string{"t_back": "10.2.0.2", "t_x_back": "10.3.0.2"}, false)
+	other := fakeContainer(t, dir, "t-other-1", "other", "running", map[string]string{"t_x_back": "10.3.0.3"}, false)
+	if err := r.writeHostsFiles([]engine.Container{api, other}); err != nil {
+		t.Fatal(err)
+	}
+	got := readHosts(t, filepath.Join(dir, "t-other-1"))
+	if strings.Contains(got, "backend-api") {
+		t.Fatalf("alias on network back must not leak onto x_back via a suffix match:\n%s", got)
+	}
+}

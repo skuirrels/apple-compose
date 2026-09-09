@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/skuirrels/apple-compose/internal/enginetest"
 )
 
 const restartService = `
@@ -33,13 +35,26 @@ func TestCreateArgsCarryRestartLabel(t *testing.T) {
 	}
 }
 
+// waitCalled polls for a runtime call the supervisor issues from a
+// goroutine.
+func waitCalled(t *testing.T, f *enginetest.Fake, prefix string) bool {
+	t.Helper()
+	for i := 0; i < 50; i++ {
+		if f.Called(prefix) {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
 func TestSuperviseRestartsExitedContainer(t *testing.T) {
 	r, f, errBuf := upFixture(t, restartService, "t-a-1")
 	f.On("ls --format json --all", "["+stopped("t-a-1", "a", "t", map[string]string{LabelRestart: "on-failure:2"})+"]", 0)
 	if err := r.Supervise(context.Background(), SuperviseOptions{Once: true, Delay: time.Millisecond}); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("start --attach t-a-1") {
+	if !waitCalled(t, f, "start --attach t-a-1") {
 		t.Fatalf("an exited container with a policy must be restarted attached: %v", f.Calls())
 	}
 	if !strings.Contains(errBuf.String(), "t-a-1 exited with code 1, restarting (on-failure:2, attempt 1)") {
@@ -88,7 +103,7 @@ func TestSuperviseSkipsContainersStoppedOnPurpose(t *testing.T) {
 	if err := r.Supervise(context.Background(), SuperviseOptions{Once: true, Delay: time.Millisecond}); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("start --attach t-a-1") {
+	if !waitCalled(t, f, "start --attach t-a-1") {
 		t.Fatalf("clearing the marker must allow restarts again: %v", f.Calls())
 	}
 }
@@ -116,8 +131,9 @@ func TestUpClearsMarkersAndStartsSupervisor(t *testing.T) {
 	f.OnSequence("ls --format json --all", "[]", "["+running("t-a-1", "a", "t", map[string]string{LabelRestart: "on-failure:2"})+"]")
 	f.On("ls --format json", "["+running("t-a-1", "a", "t", map[string]string{LabelRestart: "on-failure:2"})+"]", 0)
 	var spawned []string
-	r.SpawnSupervisor = func(name string, files []string, dir, log string) (int, error) {
-		spawned = append(spawned, name+" "+strings.Join(files, ",")+" "+dir+" "+log)
+	r.SupervisorFlags = []string{"--env-file", "extra.env", "--profile", "debug"}
+	r.SpawnSupervisor = func(name string, args []string, log string) (int, error) {
+		spawned = append(spawned, name+" "+strings.Join(args, " ")+" "+log)
 		return 4242, nil
 	}
 	if _, err := r.Up(context.Background(), UpOptions{Detach: true}); err != nil {
@@ -126,15 +142,18 @@ func TestUpClearsMarkersAndStartsSupervisor(t *testing.T) {
 	if stoppedOnPurpose("t", "t-a-1") {
 		t.Fatal("up must clear the stop marker before starting")
 	}
-	if len(spawned) != 1 || !strings.HasPrefix(spawned[0], "t ") || !strings.Contains(spawned[0], "compose.yaml") || !strings.HasSuffix(spawned[0], "supervisor.log") {
+	if len(spawned) != 1 || !strings.HasPrefix(spawned[0], "t --project-name t --file ") || !strings.Contains(spawned[0], "compose.yaml") || !strings.HasSuffix(spawned[0], "supervisor.log") {
 		t.Fatalf("supervisor must be spawned with the project's files: %v", spawned)
+	}
+	if !strings.Contains(spawned[0], "--env-file extra.env --profile debug supervise ") {
+		t.Fatalf("supervisor must inherit env files and profiles: %v", spawned)
 	}
 }
 
 func TestUpWithoutPoliciesSpawnsNothing(t *testing.T) {
 	r, f, _ := upFixture(t, "name: t\nservices:\n  a:\n    image: docker.io/library/alpine:3.20\n", "t-a-1")
 	f.On("ls --format json", "["+running("t-a-1", "a", "t", nil)+"]", 0)
-	r.SpawnSupervisor = func(string, []string, string, string) (int, error) {
+	r.SpawnSupervisor = func(string, []string, string) (int, error) {
 		t.Fatal("no service has a restart policy")
 		return 0, nil
 	}
@@ -154,7 +173,7 @@ func TestSupervisorLockPreventsSecondSpawn(t *testing.T) {
 	if _, err := HoldSupervisorLock("t"); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("second lock must fail, got %v", err)
 	}
-	r.SpawnSupervisor = func(string, []string, string, string) (int, error) {
+	r.SpawnSupervisor = func(string, []string, string) (int, error) {
 		t.Fatal("a supervisor is already running")
 		return 0, nil
 	}
@@ -189,7 +208,7 @@ func TestDownStopsSupervisorFirst(t *testing.T) {
 	r, f, _ := upFixture(t, restartService)
 	f.On("ls --format json --all", "[]", 0)
 	f.On("network ls --format json", "[]", 0)
-	stopped := false
+	stopped := make(chan struct{})
 	lock, err := HoldSupervisorLock("t")
 	if err != nil {
 		t.Fatal(err)
@@ -202,12 +221,13 @@ func TestDownStopsSupervisorFirst(t *testing.T) {
 	defer func() { _ = sleep.Process.Kill(); _ = sleep.Wait() }()
 	_, pidPath, _, _ := supervisorPaths("t")
 	_ = os.WriteFile(pidPath, []byte(strconv.Itoa(sleep.Process.Pid)), 0o644)
-	go func() { _ = sleep.Wait(); stopped = true }()
+	go func() { _ = sleep.Wait(); close(stopped) }()
 	if err := r.Down(context.Background(), DownOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond)
-	if !stopped {
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
 		t.Fatal("down must terminate the supervisor")
 	}
 }
@@ -248,5 +268,33 @@ func TestSupervisorRestartCountShowsInPs(t *testing.T) {
 	}
 	if n := restartCount("t", "t-a-1"); n != 0 {
 		t.Fatalf("recreate must reset the count, got %d", n)
+	}
+}
+
+func TestSuperviseLeavesForegroundContainersAlone(t *testing.T) {
+	r, f, _ := upFixture(t, restartService, "t-a-1")
+	f.On("ls --format json --all", "["+stopped("t-a-1", "a", "t", map[string]string{LabelRestart: "always"})+"]", 0)
+	markForeground("t", []string{"t-a-1"})
+	if err := r.Supervise(context.Background(), SuperviseOptions{Once: true}); err != nil {
+		t.Fatal(err)
+	}
+	if f.Called("start") {
+		t.Fatalf("a container attached to a foreground session must not be restarted: %v", f.Calls())
+	}
+	clearForeground("t", []string{"t-a-1"})
+	if inForeground("t", "t-a-1") {
+		t.Fatal("marker must be cleared")
+	}
+}
+
+func TestListProjectsHidesDockerPseudoProject(t *testing.T) {
+	f := enginetest.New(t)
+	f.On("ls --format json --all", "["+running("x", "x", DockerProject, nil)+","+running("a-web-1", "web", "a", nil)+"]", 0)
+	got, err := ListProjects(context.Background(), f.Engine, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "a" {
+		t.Fatalf("pseudo project must be hidden: %+v", got)
 	}
 }

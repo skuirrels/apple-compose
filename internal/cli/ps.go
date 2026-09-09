@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/skuirrels/apple-compose/internal/compose"
@@ -19,7 +21,7 @@ func (a *App) psCommand() *cobra.Command {
 			}
 			o.Services = args
 			if filter != "" {
-				if k, v, ok := cutKV(filter); ok && k == "status" {
+				if k, v, ok := strings.Cut(filter, "="); ok && k == "status" {
 					o.Status = append(o.Status, v)
 				}
 			}
@@ -38,13 +40,4 @@ func (a *App) psCommand() *cobra.Command {
 	f.Bool("no-trunc", false, "Accepted for compatibility")
 	_ = f.MarkHidden("no-trunc")
 	return cmd
-}
-
-func cutKV(s string) (string, string, bool) {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '=' {
-			return s[:i], s[i+1:], true
-		}
-	}
-	return s, "", false
 }

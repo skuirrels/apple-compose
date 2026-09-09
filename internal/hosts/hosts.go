@@ -77,6 +77,12 @@ func (f *File) Render() string {
 	return b.String()
 }
 
+// padTo is the block size hosts files are padded to. A guest caches the
+// size it last saw for a virtiofs file, so a rewrite that grows the file is
+// read short, cutting the last line. Padding with blank lines keeps the size
+// stable across rewrites; it never shrinks below what the file already was.
+const padTo = 4096
+
 // Write rewrites path in place. The file is bind-mounted into running
 // containers by inode, so it must never be replaced by rename: a renamed file
 // would leave the container's mount pointing at a deleted inode.
@@ -84,7 +90,20 @@ func (f *File) Write(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(f.Render()), 0o644)
+	content := []byte(f.Render())
+	size := ((len(content) + padTo - 1) / padTo) * padTo
+	if size < padTo {
+		size = padTo
+	}
+	if st, err := os.Stat(path); err == nil && int(st.Size()) > size {
+		size = int(st.Size())
+	}
+	padded := make([]byte, size)
+	copy(padded, content)
+	for i := len(content); i < size; i++ {
+		padded[i] = '\n'
+	}
+	return os.WriteFile(path, padded, 0o644)
 }
 
 // Ensure creates path with the loopback line when it does not exist yet, so

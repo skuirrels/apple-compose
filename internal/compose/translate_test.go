@@ -41,8 +41,10 @@ func TestPublishSpecs(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(specs, []string{"8080:80/tcp"}) {
 		t.Fatalf("simple: %v %v", specs, err)
 	}
-	specs, err = publishSpecs("web", types.ServicePortConfig{Target: 5000, Published: "5000-5002", HostIP: "127.0.0.1", Protocol: "udp"})
-	want := []string{"127.0.0.1:5000:5000/udp", "127.0.0.1:5001:5001/udp", "127.0.0.1:5002:5002/udp"}
+	// A host range with a single target maps one free host port, as Docker
+	// does; compose-go expands equal-length ranges before we see them.
+	specs, err = publishSpecs("web", types.ServicePortConfig{Target: 5000, Published: "47130-47132", HostIP: "127.0.0.1", Protocol: "udp"})
+	want := []string{"127.0.0.1:47130:5000/udp"}
 	if err != nil || !reflect.DeepEqual(specs, want) {
 		t.Fatalf("range: %v %v", specs, err)
 	}

@@ -48,7 +48,7 @@ Upgrade later with `brew upgrade apple-compose`.
 Each [release](https://github.com/skuirrels/apple-compose/releases) ships a `darwin_arm64` archive and a `checksums.txt`. Pick a version, verify it, and place the binary on your `PATH`:
 
 ```bash
-VERSION=0.3.1
+VERSION=0.3.2
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/apple-compose_${VERSION}_darwin_arm64.tar.gz"
 curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/checksums.txt"
 grep "apple-compose_${VERSION}_darwin_arm64.tar.gz" checksums.txt | shasum -a 256 -c -
@@ -111,7 +111,7 @@ apple-compose -f compose.yaml -f compose.override.yaml -p myproject --profile de
 
 | Command | Notes |
 | --- | --- |
-| `up`, `down`, `start`, `stop`, `restart`, `kill`, `rm`, `create` | Dependency ordering, `depends_on` conditions (`service_started`, `service_healthy`, `service_completed_successfully`), `--wait`, `--scale`, `--remove-orphans`, `--force-recreate`, `--exit-code-from`, `--abort-on-container-exit`, `--no-deps`, `--build`, `--pull`. Changed services are recreated using a config hash, unchanged ones are left alone. |
+| `up`, `down`, `start`, `stop`, `restart`, `kill`, `rm`, `create` | Dependency ordering, `depends_on` conditions (`service_started`, `service_healthy`, `service_completed_successfully`), `--wait`, `--scale`, `--remove-orphans`, `--force-recreate`, `--exit-code-from`, `--abort-on-container-exit`, `--attach-dependencies`, `--no-deps`, `--build`, `--pull`. Changed services are recreated using a config hash, unchanged ones are left alone. |
 | `ps`, `ls`, `images`, `port`, `top`, `logs` | `ps --format json`, `ps --health` (probes healthchecks on demand), `logs -f --tail --since --until -t`. |
 | `exec`, `run`, `cp`, `wait` | `run --rm` one-off containers with dependencies started first. |
 | `pull`, `push`, `build` | `build` uses the runtime's BuildKit builder with `args`, `target`, `platforms`, `secrets`, `ssh`, `labels`, `no_cache`, `pull`. |
@@ -147,7 +147,7 @@ Disable it per service with `x-apple-compose: {hosts_file: false}`.
 | Named volumes | Runtime volumes are ext4 disk images that start with a `lost+found` directory. apple-compose empties a freshly created volume with the first image that mounts it, so database images such as `postgres` initialise as they do on Docker. |
 | Named volumes shared by several services | A named volume is a disk image attached to one running container at a time. Use a bind mount, Docker's `driver_opts: {type: none, o: bind, device: ./path}`, or `x-apple-compose: {shared: true}` on the volume to back it with a host directory. |
 | `hostname` | The runtime derives the hostname from the container name; the requested hostname becomes a hosts-file alias. |
-| Ephemeral host ports (`ports: ["80"]`) | The runtime cannot allocate host ports; set a published port. |
+| Ephemeral host ports (`ports: ["80"]`) | The runtime cannot allocate host ports; set a published port. A host range with one container port (`"8000-8010:80"`) publishes the first free port in the range, as Docker does. |
 | `network_mode: host`, `service:`, `container:` | Not possible for VM-isolated containers; an error is raised. |
 | `privileged` | Mapped to `cap_add: [ALL]` inside the VM. |
 | `devices`, `sysctls`, `security_opt`, `pid`, `ipc`, `userns_mode`, `cgroup*`, `group_add`, `volumes_from`, `gpus`, `pids_limit`, `cpuset`, `logging` | Ignored with a warning. |
