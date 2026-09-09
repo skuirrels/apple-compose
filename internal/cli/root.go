@@ -94,7 +94,10 @@ func (a *App) rootCommand() *cobra.Command {
 			a.console = ui.NewConsole(a.g.ansi)
 			eng, err := engine.New()
 			if err != nil {
-				if cmd.Name() == "version" || cmd.Name() == "config" || cmd.Name() == "help" {
+				// Commands that never touch the runtime must keep working
+				// without it, including shell completion generation at
+				// package install time.
+				if !needsRuntime(cmd) {
 					return nil
 				}
 				return err
@@ -133,6 +136,17 @@ func (a *App) rootCommand() *cobra.Command {
 		a.topCommand(), a.eventsCommand(), a.versionCommand(), a.pluginCommand(),
 	)
 	return root
+}
+
+// needsRuntime reports whether a command talks to the container runtime.
+func needsRuntime(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		switch c.Name() {
+		case "completion", "help", "version", "config", "convert", "plugin":
+			return false
+		}
+	}
+	return true
 }
 
 // loadProject reads the compose project for a command, selecting services
