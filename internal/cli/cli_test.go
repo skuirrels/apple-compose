@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/spf13/cobra"
 )
 
@@ -45,5 +46,15 @@ func TestConfigAndVersionWorkWithoutRuntime(t *testing.T) {
 	}
 	if code := Execute("9.9.9", []string{"up", "--scale", "web=x"}); code == 0 {
 		t.Fatal("bad --scale must fail")
+	}
+}
+
+func TestRunnerAnchorsEnvFilesForTheSupervisor(t *testing.T) {
+	app := &App{version: "test"}
+	app.g.envFiles = []string{".env"}
+	app.g.profiles = []string{"debug"}
+	r := app.runner(&types.Project{Name: "p", Services: types.Services{}})
+	if len(r.SupervisorFlags) != 4 || r.SupervisorFlags[0] != "--env-file" || !filepath.IsAbs(r.SupervisorFlags[1]) || r.SupervisorFlags[3] != "debug" {
+		t.Fatalf("supervisor flags = %v", r.SupervisorFlags)
 	}
 }

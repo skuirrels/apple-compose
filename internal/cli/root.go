@@ -202,6 +202,11 @@ func (a *App) runner(p *types.Project) *compose.Runner {
 	r := compose.New(a.eng, p, a.console, a.version)
 	r.SupervisorPrefix = CommandPrefix
 	for _, f := range a.g.envFiles {
+		// The supervisor runs from the state directory, so relative env
+		// file paths must be anchored to this invocation's directory.
+		if abs, err := filepath.Abs(f); err == nil {
+			f = abs
+		}
 		r.SupervisorFlags = append(r.SupervisorFlags, "--env-file", f)
 	}
 	for _, pr := range a.g.profiles {
