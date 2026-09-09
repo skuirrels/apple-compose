@@ -86,10 +86,8 @@ func (r *Runner) Up(ctx context.Context, o UpOptions) (int, error) {
 	if err := r.EnsureNetworks(ctx); err != nil {
 		return 1, err
 	}
-	if err := r.EnsureVolumes(ctx); err != nil {
-		return 1, err
-	}
-	r.warnSharedVolumes()
+	// Images come before volumes: a fresh volume is emptied with the first
+	// image that mounts it.
 	imgOpts := ImageOptions{Build: o.Build, NoBuild: o.NoBuild, Pull: o.Pull, Quiet: o.QuietPull}
 	for _, name := range serviceOrder(r.Project, r.Project.ServiceNames()) {
 		s, _ := r.Project.GetService(name)
@@ -97,6 +95,10 @@ func (r *Runner) Up(ctx context.Context, o UpOptions) (int, error) {
 			return 1, err
 		}
 	}
+	if err := r.EnsureVolumes(ctx); err != nil {
+		return 1, err
+	}
+	r.warnSharedVolumes()
 
 	existing, err := r.containers(ctx, true)
 	if err != nil {
@@ -270,6 +272,12 @@ func (r *Runner) createContainer(ctx context.Context, s types.ServiceConfig, num
 	}
 	if _, err := r.Engine.Create(ctx, args...); err != nil {
 		r.Console.Fail("Container", name, "Creating", err)
+		return err
+	}
+	// Peers that are already running must be resolvable from the very
+	// first instruction of the new container, so its hosts file is filled
+	// in before it starts; its own address is added once it is running.
+	if err := r.RefreshHosts(ctx, name); err != nil {
 		return err
 	}
 	return nil

@@ -21,13 +21,14 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 - [05 Plugin packaging](issues/05-plugin-packaging.md): standalone `apple-compose` binary, installable as `container compose` CLI plugin.
 - [07 Exit codes](issues/07-exit-codes.md): the runtime reports exit codes only to an attached client, so apple-compose attaches when it needs them and records them under its state directory.
 - [06 Core build](issues/06-core-build.md): product implemented, tested end to end, and published; release tooling in place.
+- [09 Fresh volumes and database images](issues/09-fresh-volumes.md): runtime volumes carry `lost+found`; apple-compose empties a new volume with the first image that mounts it so postgres-style initialisation works.
 - [08 Shared named volumes](issues/08-shared-volumes.md): runtime volumes are single-attach disk images; multi-service volumes get a warning and can be backed by a host directory via Docker's `driver_opts` bind syntax or `x-apple-compose: {shared: true}`.
 
 ## Not yet specified
 
 - Restart policies: the runtime has none; whether the attached `up` loop should emulate `restart:` for foreground sessions.
 - Continuous health monitoring outside `up` (no daemon exists to run checks); `ps --health` probes on demand for now.
-- Port publishing could not be verified on the charting machine: the launchd-spawned runtime helper gets "no route to host" when forwarding, consistent with macOS Local Network privacy for a relocated install.
+- Port publishing could not be verified on the charting machine: unsigned third-party binaries get "no route to host" to container addresses while Apple-signed ones succeed, which is macOS Local Network privacy; the runtime helper needs that permission granted in System Settings.
 - Rosetta / amd64 image handling defaults when a compose file sets `platform`.
 - Secrets and configs beyond file-backed bind mounts (environment-backed secrets).
 - Compose `develop.watch` file sync.

@@ -1,0 +1,6 @@
+services:
+  app:
+    environment:
+      - EXTRA=from-override
+    labels:
+      com.example.override: "yes"

@@ -27,13 +27,32 @@ func (r *Runner) hostsPathFor(name string) (string, error) {
 
 // RefreshHosts rewrites the hosts file of every container in the project from
 // the addresses the runtime currently reports. It is called after any
-// container starts, so peers learn new addresses immediately.
-func (r *Runner) RefreshHosts(ctx context.Context) error {
+// container starts, so peers learn new addresses immediately. Containers
+// named in extra are included even when the runtime's listing omits them,
+// which is the case for containers created but not yet started.
+func (r *Runner) RefreshHosts(ctx context.Context, extra ...string) error {
+	if r.Engine.DryRun {
+		return nil
+	}
 	hostsMu.Lock()
 	defer hostsMu.Unlock()
 	cs, err := r.containers(ctx, true)
 	if err != nil {
 		return err
+	}
+	listed := map[string]bool{}
+	for _, c := range cs {
+		listed[c.ID] = true
+	}
+	for _, name := range extra {
+		if listed[name] {
+			continue
+		}
+		c, err := r.Engine.InspectContainer(ctx, name)
+		if err != nil {
+			return err
+		}
+		cs = append(cs, *c)
 	}
 	return r.writeHostsFiles(cs)
 }
@@ -55,6 +74,11 @@ func (r *Runner) writeHostsFiles(cs []engine.Container) error {
 		}
 		f := hosts.New()
 		self, _ := r.Project.GetService(c.Label(project.LabelService))
+		// Until the container has an address, its own name resolves to a
+		// loopback alias so software that looks itself up at boot works.
+		if !c.Running() {
+			f.Add("127.0.1.1", hostnameOf(c.ID), c.ID)
+		}
 		if c.Running() {
 			ip := c.PrimaryIP()
 			f.Add(ip, hostnameOf(c.ID), c.ID)
@@ -117,12 +141,29 @@ func hostnameOf(id string) string {
 // sharedIP returns the peer's address on the first of c's networks that the
 // peer is also attached to.
 func sharedIP(c, peer engine.Container) string {
-	for _, n := range c.Status.Networks {
-		if a := peer.Attachment(n.Network); a != nil {
+	for _, n := range networksOf(c) {
+		if a := peer.Attachment(n); a != nil {
 			return a.IP()
 		}
 	}
 	return ""
+}
+
+// networksOf lists a container's networks in priority order: the live
+// attachments when running, otherwise the attachments it was created with,
+// so a container's hosts file can be filled in before it starts.
+func networksOf(c engine.Container) []string {
+	var out []string
+	if c.Running() {
+		for _, n := range c.Status.Networks {
+			out = append(out, n.Network)
+		}
+		return out
+	}
+	for _, n := range c.Configuration.Networks {
+		out = append(out, n.Network)
+	}
+	return out
 }
 
 // aliasesFor returns the network aliases of a peer service on networks the
@@ -137,8 +178,8 @@ func aliasesFor(peer types.ServiceConfig, target engine.Container) []string {
 		if n, ok := peer.Networks[key]; ok && n != nil {
 			_ = n
 		}
-		for _, att := range target.Status.Networks {
-			if att.Network == name || strings.HasSuffix(att.Network, "_"+key) {
+		for _, att := range networksOf(target) {
+			if att == name || strings.HasSuffix(att, "_"+key) {
 				out = append(out, cfg.Aliases...)
 				break
 			}

@@ -86,6 +86,9 @@ func (r *Runner) Run(ctx context.Context, o RunOptions) (int, error) {
 	if err := r.EnsureNetworks(ctx); err != nil {
 		return 1, err
 	}
+	if err := r.EnsureImage(ctx, s, ImageOptions{Build: o.Build, Pull: o.Pull, Quiet: o.QuietPull}); err != nil {
+		return 1, err
+	}
 	if err := r.EnsureVolumes(ctx); err != nil {
 		return 1, err
 	}
@@ -98,9 +101,6 @@ func (r *Runner) Run(ctx context.Context, o RunOptions) (int, error) {
 		if _, err := sub.Up(ctx, UpOptions{Detach: true, QuietPull: o.QuietPull, Build: o.Build, Pull: o.Pull, RemoveOrphans: o.RemoveOrphans}); err != nil {
 			return 1, err
 		}
-	}
-	if err := r.EnsureImage(ctx, s, ImageOptions{Build: o.Build, Pull: o.Pull, Quiet: o.QuietPull}); err != nil {
-		return 1, err
 	}
 	name := o.Name
 	if name == "" {
@@ -146,6 +146,9 @@ func (r *Runner) Run(ctx context.Context, o RunOptions) (int, error) {
 		return 1, err
 	}
 	if _, err := r.Engine.Create(ctx, args...); err != nil {
+		return 1, err
+	}
+	if err := r.RefreshHosts(ctx, name); err != nil {
 		return 1, err
 	}
 	if o.Detach {

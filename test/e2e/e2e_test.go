@@ -99,6 +99,10 @@ services:
   init:
     image: alpine:3.20
     command: sh -c "echo init done"
+    volumes:
+      - data:/data
+volumes:
+  data: {}
 `)
 	c := &cli{t: t, bin: bin, dir: dir}
 	t.Cleanup(func() { c.run("down", "-v", "--remove-orphans") })
@@ -113,6 +117,10 @@ services:
 	hosts := c.must("exec", "-T", "web", "getent", "hosts", "db", "database", "e2ebasic-db-1", "host.docker.internal")
 	if strings.Count(hosts, "\n") < 4 {
 		t.Fatalf("expected four resolutions, got:\n%s", hosts)
+	}
+	empty := c.must("run", "--rm", "-T", "init", "sh", "-c", "ls -A /data | wc -l")
+	if strings.TrimSpace(strings.Split(strings.TrimSpace(empty), "\n")[len(strings.Split(strings.TrimSpace(empty), "\n"))-1]) != "0" {
+		t.Fatalf("fresh volume must be empty:\n%s", empty)
 	}
 	back := c.must("exec", "-T", "db", "getent", "hosts", "web")
 	if !strings.Contains(back, "web") {
@@ -204,5 +212,26 @@ volumes:
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in dry-run output:\n%s", want, out)
 		}
+	}
+}
+
+func TestPeersResolveAtBoot(t *testing.T) {
+	bin := binary(t)
+	dir := writeProject(t, `
+name: e2eboot
+services:
+  db:
+    image: alpine:3.20
+    command: sh -c "while true; do sleep 1; done"
+  client:
+    image: alpine:3.20
+    command: sh -c "getent hosts db && getent hosts $(hostname)"
+    depends_on: [db]
+`)
+	c := &cli{t: t, bin: bin, dir: dir}
+	t.Cleanup(func() { c.run("down") })
+	out, code := c.run("up", "--exit-code-from", "client")
+	if code != 0 {
+		t.Fatalf("client could not resolve db or itself at boot (exit %d):\n%s", code, out)
 	}
 }

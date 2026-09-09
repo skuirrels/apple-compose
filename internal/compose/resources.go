@@ -110,8 +110,43 @@ func (r *Runner) EnsureVolumes(ctx context.Context) error {
 			return err
 		}
 		r.Console.Step("Volume", name, "Created")
+		if err := r.emptyVolume(ctx, key, name); err != nil {
+			r.warnOnce("lostfound:"+name, "volume %s: could not remove lost+found (%v); images that require an empty data directory, such as postgres, may refuse to initialise", name, err)
+		}
 	}
 	return nil
+}
+
+// emptyVolume removes the lost+found directory a fresh ext4 volume image
+// carries. Docker's named volumes start empty, and database images such as
+// postgres refuse to initialise a non-empty data directory, so the volume is
+// emptied with the first image that mounts it (which avoids pulling anything
+// extra). Images without rmdir are reported and left alone.
+func (r *Runner) emptyVolume(ctx context.Context, key, name string) error {
+	image := ""
+	for _, svcName := range r.Project.ServiceNames() {
+		s, _ := r.Project.GetService(svcName)
+		for _, v := range s.Volumes {
+			if v.Type == "volume" && v.Source == key {
+				image = project.ImageName(r.Project, s)
+				break
+			}
+		}
+		if image != "" {
+			break
+		}
+	}
+	if image == "" || r.Engine.DryRun {
+		return nil
+	}
+	if ok, err := r.Engine.HasImage(ctx, image); err != nil || !ok {
+		return fmt.Errorf("image %s is not available yet", image)
+	}
+	args := []string{"run", "--rm", "--network", "none", "--no-dns",
+		"--mount", mountSpec("volume", name, "/.apple-compose-volume", false),
+		"--entrypoint", "rmdir", image, "/.apple-compose-volume/lost+found"}
+	_, err := r.Engine.Mutate(ctx, args...)
+	return err
 }
 
 // PullPolicy decides how an image is obtained before a container is created.

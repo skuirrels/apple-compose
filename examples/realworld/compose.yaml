@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: realworld_db
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+    stop_grace_period: 20s
+  cache:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", ""]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+    read_only: true
+    tmpfs:
+      - /data
+  app:
+    image: python:3.12-alpine
+    init: true
+    env_file: app.env
+    environment:
+      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@db:5432/app
+      - REDIS_URL=redis://cache:6379
+    working_dir: /srv
+    command: >
+      sh -c "python3 -c \"import socket; s=socket.create_connection(('db',5432)); print('db reachable'); s.close();
+      s=socket.create_connection(('cache',6379)); s.sendall(b'PING\\r\\n'); print('redis says', s.recv(16))\"
+      && python3 -u -m http.server 8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+    extra_hosts:
+      - "host.local:host-gateway"
+      - "fixed.example:10.1.2.3"
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    cap_drop: [NET_RAW]
+    stop_signal: SIGINT
+    labels:
+      com.example.team: platform
+  web:
+    image: nginx:alpine
+    ports:
+      - "${APP_PORT}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+volumes:
+  pgdata:

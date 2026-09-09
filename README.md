@@ -25,6 +25,8 @@ shop-web-1   nginx:alpine     "nginx -g daemon off;"  web       11 seconds ago  
 - Apple silicon Mac running **macOS 26** or later (the runtime's custom networks need it).
 - [Apple `container`](https://github.com/apple/container/releases) 1.3 or later, with its services started (`container system start`).
 
+macOS asks once whether the runtime's helper (`container-runtime-linux`) may use the local network. Published ports stay unreachable until that is allowed under System Settings › Privacy & Security › Local Network.
+
 ## Install
 
 ```bash
@@ -90,6 +92,7 @@ Disable it per service with `x-apple-compose: {hosts_file: false}`.
 | --- | --- |
 | `restart` | The runtime has no restart policies. When `up` runs in the foreground it restarts exited services according to the policy; detached containers are not restarted. |
 | `healthcheck` | No daemon runs checks continuously. apple-compose probes during `up` (for `depends_on` and `--wait`) and on `ps --health`. |
+| Named volumes | Runtime volumes are ext4 disk images that start with a `lost+found` directory. apple-compose empties a freshly created volume with the first image that mounts it, so database images such as `postgres` initialise as they do on Docker. |
 | Named volumes shared by several services | A named volume is a disk image attached to one running container at a time. Use a bind mount, Docker's `driver_opts: {type: none, o: bind, device: ./path}`, or `x-apple-compose: {shared: true}` on the volume to back it with a host directory. |
 | `hostname` | The runtime derives the hostname from the container name; the requested hostname becomes a hosts-file alias. |
 | Ephemeral host ports (`ports: ["80"]`) | The runtime cannot allocate host ports; set a published port. |
