@@ -29,16 +29,51 @@ macOS asks once whether the runtime's helper (`container-runtime-linux`) may use
 
 ## Install
 
+### Homebrew
+
+The formula is served from this repository as a tap while the project is being tested; it will be submitted to homebrew-core once it has settled.
+
 ```bash
 brew tap skuirrels/apple-compose https://github.com/skuirrels/apple-compose
-brew trust skuirrels/apple-compose   # Homebrew 6+ refuses third-party taps until trusted
+brew trust skuirrels/apple-compose   # Homebrew 6 refuses third-party taps until trusted
 brew install skuirrels/apple-compose/apple-compose
 ```
 
-Or download a release archive from the [releases page](https://github.com/skuirrels/apple-compose/releases), or build from source with Go 1.27+:
+Upgrade later with `brew upgrade apple-compose`.
+
+### Direct from GitHub
+
+Each [release](https://github.com/skuirrels/apple-compose/releases) ships a `darwin_arm64` archive and a `checksums.txt`. Pick a version, verify it, and place the binary on your `PATH`:
+
+```bash
+VERSION=0.1.2
+curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/apple-compose_${VERSION}_darwin_arm64.tar.gz"
+curl -fsSLO "https://github.com/skuirrels/apple-compose/releases/download/v${VERSION}/checksums.txt"
+grep "apple-compose_${VERSION}_darwin_arm64.tar.gz" checksums.txt | shasum -a 256 -c -
+tar -xzf "apple-compose_${VERSION}_darwin_arm64.tar.gz" apple-compose
+sudo install -m 0755 apple-compose /usr/local/bin/apple-compose
+```
+
+If you downloaded the archive with a browser rather than `curl`, macOS quarantines it; clear that before running:
+
+```bash
+xattr -d com.apple.quarantine /usr/local/bin/apple-compose
+```
+
+### From source
+
+Requires Go 1.27 or later:
 
 ```bash
 go install github.com/skuirrels/apple-compose/cmd/apple-compose@latest
+```
+
+or clone the repository and run `make build`, which produces `bin/apple-compose`.
+
+Whichever route you take, confirm the binary sees the runtime:
+
+```bash
+apple-compose version
 ```
 
 ### Use it as `container compose`
