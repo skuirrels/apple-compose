@@ -200,6 +200,7 @@ Global Docker flags (`-H`, `--context`, `--config`, `-l`, `--tls*`) are accepted
 | Variable | Effect |
 | --- | --- |
 | `APPLE_COMPOSE_DNS` | Comma-separated nameservers given to every container and image build that sets none of its own. Use it when `nslookup` inside a container fails while the host resolves fine: the runtime's NAT resolver on the network gateway is then being blocked, typically by the macOS application firewall or a VPN client. Example: `export APPLE_COMPOSE_DNS=1.1.1.1`. |
+| `APPLE_COMPOSE_MEMORY`, `APPLE_COMPOSE_CPUS` | Memory size (for example `4g`) and CPU count given to every container that sets no limit of its own. The runtime defaults to 1 GB and 4 CPUs per container, while Docker imposes no limit; SQL Server, for one, refuses to start below 2 GB. |
 | `CONTAINER_BIN` | Path to the `container` executable when it is not on `PATH`. |
 | `APPLE_COMPOSE_HOME` | State directory (default `~/Library/Application Support/apple-compose`). |
 | `COMPOSE_FILE`, `COMPOSE_PROJECT_NAME`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR` | Honoured as by Docker Compose. |

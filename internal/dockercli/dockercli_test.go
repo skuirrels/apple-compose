@@ -564,3 +564,15 @@ func TestTmpfsOptionsWarn(t *testing.T) {
 		t.Fatalf("expected tmpfs warning:\n%s", h.err)
 	}
 }
+
+func TestDefaultResourcesApplyToRun(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("APPLE_COMPOSE_MEMORY", "3g")
+	t.Setenv("APPLE_COMPOSE_CPUS", "2")
+	if code := h.run("run", "alpine"); code != 0 || h.execd() != "run --memory 3g --cpus 2 alpine" {
+		t.Fatalf("run must carry the default resources: %q", h.execd())
+	}
+	if code := h.run("run", "-m", "512m", "--cpus", "1", "alpine"); code != 0 || h.execd() != "run --cpus 1 --memory 512m alpine" {
+		t.Fatalf("explicit limits must win: %q", h.execd())
+	}
+}

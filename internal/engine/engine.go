@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -29,6 +30,25 @@ var ErrNotFound = errors.New("not found")
 // own. It is a workaround for hosts where the runtime's resolver on the
 // network gateway does not answer.
 const EnvDefaultDNS = "APPLE_COMPOSE_DNS"
+
+// EnvDefaultMemory and EnvDefaultCPUs name the environment variables that
+// give containers without their own limits a memory size (for example "4g")
+// and CPU count. The runtime's own defaults are one gigabyte and four CPUs,
+// which images such as SQL Server refuse to start with; Docker imposes no
+// limit at all.
+const (
+	EnvDefaultMemory = "APPLE_COMPOSE_MEMORY"
+	EnvDefaultCPUs   = "APPLE_COMPOSE_CPUS"
+)
+
+// DefaultMemory returns the memory size from EnvDefaultMemory, or "".
+func DefaultMemory() string { return strings.TrimSpace(os.Getenv(EnvDefaultMemory)) }
+
+// DefaultCPUs returns the CPU count from EnvDefaultCPUs, or 0.
+func DefaultCPUs() int {
+	n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvDefaultCPUs)))
+	return n
+}
 
 // DefaultDNS returns the nameservers from EnvDefaultDNS, if any.
 func DefaultDNS() []string {

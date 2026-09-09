@@ -331,3 +331,15 @@ func TestHealthcheckRetriesZeroMeansDefault(t *testing.T) {
 		t.Fatalf("retries 0 must fall back to 3, got %+v", spec)
 	}
 }
+
+func TestDefaultResourcesFromEnvironment(t *testing.T) {
+	r, _ := loadRunner(t, "name: t\nservices:\n  a:\n    image: img\n  b:\n    image: img\n    mem_limit: 512m\n    cpus: 1\n", nil)
+	t.Setenv("APPLE_COMPOSE_MEMORY", "4g")
+	t.Setenv("APPLE_COMPOSE_CPUS", "2")
+	if got := argsFor(t, r, "a"); !strings.Contains(got, "--memory 4g") || !strings.Contains(got, "--cpus 2") {
+		t.Fatalf("defaults missing: %s", got)
+	}
+	if got := argsFor(t, r, "b"); !strings.Contains(got, "--memory 512M") || !strings.Contains(got, "--cpus 1") || strings.Contains(got, "4g") {
+		t.Fatalf("explicit limits must win: %s", got)
+	}
+}

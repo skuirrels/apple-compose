@@ -187,12 +187,17 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 		add("--user", user)
 	}
 
-	// Resources: the runtime allocates whole CPUs to the VM.
+	// Resources: the runtime allocates whole CPUs to the VM. Services
+	// without limits get the APPLE_COMPOSE_CPUS/MEMORY defaults, if set.
 	if cpus := cpusFor(s); cpus > 0 {
 		add("--cpus", strconv.Itoa(cpus))
+	} else if n := engine.DefaultCPUs(); n > 0 {
+		add("--cpus", strconv.Itoa(n))
 	}
 	if mem := memoryFor(s); mem > 0 {
 		add("--memory", megabytes(mem))
+	} else if m := engine.DefaultMemory(); m != "" {
+		add("--memory", m)
 	}
 
 	// Ports.

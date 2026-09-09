@@ -212,6 +212,13 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	}
 	if o.memory != "" {
 		args = append(args, "--memory", o.memory)
+	} else if m := engine.DefaultMemory(); m != "" {
+		args = append(args, "--memory", m)
+	}
+	if o.cpus == "" {
+		if n := engine.DefaultCPUs(); n > 0 {
+			args = append(args, "--cpus", strconv.Itoa(n))
+		}
 	}
 	if o.privileged {
 		a.warn("--privileged has no equivalent in an isolated VM; granting all capabilities instead")
