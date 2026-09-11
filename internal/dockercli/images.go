@@ -325,7 +325,7 @@ func (a *App) buildCommand() *cobra.Command {
 			if output != "" {
 				bargs = append(bargs, "--output", output)
 			}
-			for _, d := range engine.DefaultDNS() {
+			for _, d := range a.eng.DefaultDNS(cmd.Context(), "default") {
 				bargs = append(bargs, "--dns", d)
 			}
 			switch {

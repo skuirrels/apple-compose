@@ -56,7 +56,8 @@ Ratings come from reading each project's source and documentation on 9 September
 | Exit codes of containers | ✅ via attach | ❓ | ⚠️ one process |
 | Fresh volume usable by postgres | ✅ empties `lost+found` | ✅ own directories | ❌ |
 | Volume shared by two services | ⚠️ host-dir escape hatch | ✅ own directories | ❌ |
-| Port publishing | ⚠️ runtime forwarder | ✅ own TCP proxy | ⚠️ runtime forwarder |
+| Port publishing | ✅ runtime forwarder plus IPv6 relay | ✅ own TCP proxy | ⚠️ runtime forwarder, IPv4 only |
+| Resource and DNS defaults | ✅ half host memory, every CPU, DNS fallback when the gateway resolver is silent | ❓ | ⚠️ runtime's 1 GB and 4 CPUs |
 | **Quality** | | | |
 | Unit tests | ✅ fake-runtime harness | ✅ | ✅ |
 | Live end-to-end suite | ✅ | ❓ | ❓ |

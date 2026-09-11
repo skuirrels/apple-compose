@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"math"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 
-	"github.com/skuirrels/apple-compose/internal/engine"
 	"github.com/skuirrels/apple-compose/internal/project"
 	"github.com/skuirrels/apple-compose/internal/state"
 )
@@ -193,15 +193,15 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	}
 
 	// Resources: the runtime allocates whole CPUs to the VM. Services
-	// without limits get the APPLE_COMPOSE_CPUS/MEMORY defaults, if set.
+	// without limits get the host-derived defaults, as Docker applies none.
 	if cpus := cpusFor(s); cpus > 0 {
 		add("--cpus", strconv.Itoa(cpus))
-	} else if n := engine.DefaultCPUs(); n > 0 {
+	} else if n := r.Engine.DefaultCPUs(); n > 0 {
 		add("--cpus", strconv.Itoa(n))
 	}
 	if mem := memoryFor(s); mem > 0 {
 		add("--memory", megabytes(mem))
-	} else if m := engine.DefaultMemory(); m != "" {
+	} else if m := r.Engine.DefaultMemory(); m != "" {
 		add("--memory", m)
 	}
 
@@ -252,7 +252,7 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	add(netArgs...)
 	dns := s.DNS
 	if len(dns) == 0 {
-		dns = engine.DefaultDNS()
+		dns = r.Engine.DefaultDNS(context.Background(), networkNames(netArgs)...)
 	}
 	for _, d := range dns {
 		add("--dns", d)
@@ -787,4 +787,17 @@ func (r *Runner) warnSharedVolumes() {
 			r.warnOnce("sharedvol:"+key, "volume %s is mounted by %s; the container runtime attaches a named volume to one running container at a time. Use a bind mount, or mark it shared with `x-apple-compose: {shared: true}` on the volume", key, strings.Join(users[key], ", "))
 		}
 	}
+}
+
+// networkNames extracts the network names from --network arguments, dropping
+// per-network options such as a MAC address.
+func networkNames(netArgs []string) []string {
+	var out []string
+	for i := 0; i+1 < len(netArgs); i += 2 {
+		if netArgs[i] == "--network" {
+			name, _, _ := strings.Cut(netArgs[i+1], ",")
+			out = append(out, name)
+		}
+	}
+	return out
 }

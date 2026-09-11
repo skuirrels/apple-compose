@@ -5,9 +5,13 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -482,4 +486,71 @@ func waitForContent(t *testing.T, c *cli, path, want string) {
 		time.Sleep(time.Second)
 	}
 	t.Fatalf("%s never held %q, last read:\n%s", path, want, last)
+}
+
+// unconfigured clears every apple-compose setting, so a test sees what a
+// user who has set nothing gets.
+var unconfigured = []string{"APPLE_COMPOSE_DNS=", "APPLE_COMPOSE_MEMORY=", "APPLE_COMPOSE_CPUS=", "APPLE_COMPOSE_IPV6_PORTS="}
+
+func TestDefaultsWorkWithoutConfiguration(t *testing.T) {
+	bin := binary(t)
+	dir := writeProject(t, `
+name: e2edefaults
+services:
+  probe:
+    image: alpine:3.20
+    command: sh -c "getent hosts github.com && grep MemTotal /proc/meminfo"
+`)
+	c := &cli{t: t, bin: bin, dir: dir, env: unconfigured}
+	t.Cleanup(func() { c.run("down") })
+	out, code := c.run("up", "--exit-code-from", "probe")
+	if code != 0 {
+		t.Fatalf("an external name must resolve with no DNS configured (exit %d):\n%s", code, out)
+	}
+	var kb int
+	for _, line := range strings.Split(out, "\n") {
+		if i := strings.Index(line, "MemTotal:"); i >= 0 {
+			fields := strings.Fields(line[i+len("MemTotal:"):])
+			if len(fields) > 0 {
+				kb, _ = strconv.Atoi(fields[0])
+			}
+		}
+	}
+	if kb < 2*1024*1024-128*1024 {
+		t.Fatalf("a container without limits must get at least 2 GiB, got %d kB:\n%s", kb, out)
+	}
+}
+
+func TestPublishedPortAnswersOnIPv6(t *testing.T) {
+	bin := binary(t)
+	dir := writeProject(t, `
+name: e2eipv6
+services:
+  web:
+    image: nginx:alpine
+    ports: ["47190:80"]
+`)
+	c := &cli{t: t, bin: bin, dir: dir, env: unconfigured}
+	t.Cleanup(func() { c.run("down") })
+	c.must("up", "-d")
+	deadline := time.Now().Add(90 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp6", "[::1]:47190", 2*time.Second)
+		if err != nil {
+			last = err.Error()
+			time.Sleep(time.Second)
+			continue
+		}
+		fmt.Fprint(conn, "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n")
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		b, _ := io.ReadAll(conn)
+		conn.Close()
+		if strings.HasPrefix(string(b), "HTTP/1.1 200") {
+			return
+		}
+		last = string(b)
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("port 47190 never answered over IPv6, last result: %s", last)
 }

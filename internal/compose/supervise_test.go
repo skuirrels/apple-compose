@@ -152,10 +152,13 @@ func TestUpClearsMarkersAndStartsSupervisor(t *testing.T) {
 }
 
 func TestUpWithoutPoliciesSpawnsNothing(t *testing.T) {
+	// The fake container publishes a port, which on its own needs the
+	// supervisor for IPv6; with forwarding off nothing is left to supervise.
+	t.Setenv(EnvIPv6Ports, "off")
 	r, f, _ := upFixture(t, "name: t\nservices:\n  a:\n    image: docker.io/library/alpine:3.20\n", "t-a-1")
 	f.On("ls --format json", "["+running("t-a-1", "a", "t", nil)+"]", 0)
 	r.SpawnSupervisor = func(string, []string, string) (int, error) {
-		t.Fatal("no service has a restart policy")
+		t.Fatal("no restart policy and no IPv6 forwarding to supervise")
 		return 0, nil
 	}
 	if _, err := r.Up(context.Background(), UpOptions{Detach: true}); err != nil {
@@ -297,5 +300,51 @@ func TestListProjectsHidesDockerPseudoProject(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "a" {
 		t.Fatalf("pseudo project must be hidden: %+v", got)
+	}
+}
+
+func TestUpWithPublishedPortsStartsSupervisor(t *testing.T) {
+	t.Setenv(EnvIPv6Ports, "")
+	r, f, _ := upFixture(t, "name: t\nservices:\n  a:\n    image: docker.io/library/alpine:3.20\n", "t-a-1")
+	f.On("ls --format json", "["+running("t-a-1", "a", "t", nil)+"]", 0)
+	spawned := 0
+	r.SpawnSupervisor = func(string, []string, string) (int, error) {
+		spawned++
+		return 4243, nil
+	}
+	if _, err := r.Up(context.Background(), UpOptions{Detach: true}); err != nil {
+		t.Fatal(err)
+	}
+	if spawned != 1 {
+		t.Fatalf("a container publishing a port must start the supervisor for IPv6 forwarding, spawned %d", spawned)
+	}
+}
+
+func TestSuperviseWaitsOutItsGracePeriod(t *testing.T) {
+	r, _ := loadRunner(t, restartService, nil)
+	f := withFake(t, r)
+	f.On("ls --format json --all", "[]", 0)
+	start := time.Now()
+	if err := r.Supervise(context.Background(), SuperviseOptions{Interval: 10 * time.Millisecond, Grace: 150 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
+		t.Fatalf("returned after %v, before the grace period ended", elapsed)
+	}
+}
+
+func TestSuperviseExitsPromptlyOnceWorkIsDone(t *testing.T) {
+	r, _ := loadRunner(t, restartService, nil)
+	f := withFake(t, r)
+	// The container is seen with a policy it has already exhausted, so the
+	// supervisor has had work and must not sit out the grace period.
+	f.On("ls --format json --all", "["+stopped("t-a-1", "a", "t", map[string]string{LabelRestart: "no-such-policy"})+"]", 0)
+	markStopped("t", []string{"t-a-1"})
+	start := time.Now()
+	if err := r.Supervise(context.Background(), SuperviseOptions{Interval: 10 * time.Millisecond, Grace: 5 * time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("waited %v after its work was done", elapsed)
 	}
 }

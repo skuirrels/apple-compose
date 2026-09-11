@@ -53,6 +53,15 @@ func (a *App) ensureSupervisor(ctx context.Context) {
 	}
 }
 
+// startSupervisor launches the supervisor without waiting for a container to
+// need it, for runs whose container is created after this process hands over
+// to the runtime.
+func (a *App) startSupervisor(ctx context.Context) {
+	if err := a.supervisorRunner().StartSupervisor(ctx); err != nil {
+		a.warn("supervisor: %v", err)
+	}
+}
+
 // markStopped records deliberate stops so the supervisor leaves them alone.
 func markStopped(ids ...string) { compose.MarkStopped(supervisedProject, ids) }
 

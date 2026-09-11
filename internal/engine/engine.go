@@ -16,8 +16,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/term"
 )
@@ -26,40 +26,18 @@ import (
 var ErrNotFound = errors.New("not found")
 
 // EnvDefaultDNS names the environment variable holding comma-separated
-// nameservers applied to every container and build that does not set its
-// own. It is a workaround for hosts where the runtime's resolver on the
-// network gateway does not answer.
+// nameservers for every container and build that sets none of its own. Unset,
+// the gateway resolver is probed and replaced only when it is silent.
 const EnvDefaultDNS = "APPLE_COMPOSE_DNS"
 
 // EnvDefaultMemory and EnvDefaultCPUs name the environment variables that
-// give containers without their own limits a memory size (for example "4g")
-// and CPU count. The runtime's own defaults are one gigabyte and four CPUs,
-// which images such as SQL Server refuse to start with; Docker imposes no
-// limit at all.
+// override the memory size (for example "4g") and CPU count given to
+// containers without limits of their own. Unset, half the host's memory and
+// every host CPU apply.
 const (
 	EnvDefaultMemory = "APPLE_COMPOSE_MEMORY"
 	EnvDefaultCPUs   = "APPLE_COMPOSE_CPUS"
 )
-
-// DefaultMemory returns the memory size from EnvDefaultMemory, or "".
-func DefaultMemory() string { return strings.TrimSpace(os.Getenv(EnvDefaultMemory)) }
-
-// DefaultCPUs returns the CPU count from EnvDefaultCPUs, or 0.
-func DefaultCPUs() int {
-	n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvDefaultCPUs)))
-	return n
-}
-
-// DefaultDNS returns the nameservers from EnvDefaultDNS, if any.
-func DefaultDNS() []string {
-	var out []string
-	for _, s := range strings.Split(os.Getenv(EnvDefaultDNS), ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
 
 // Engine locates and runs the `container` binary.
 type Engine struct {
@@ -71,6 +49,14 @@ type Engine struct {
 	Debug bool
 	// Log receives dry-run and debug output. Defaults to os.Stderr.
 	Log io.Writer
+	// NoHostDefaults limits defaults to the environment variables, leaving
+	// the host unprobed. Tests set it for stable command lines.
+	NoHostDefaults bool
+	// Probe replaces the host probe used for defaults; nil probes the Mac.
+	Probe *HostProbe
+
+	dnsMu        sync.Mutex
+	dnsByGateway map[string][]string
 }
 
 // ExitError describes a `container` invocation that returned non-zero.

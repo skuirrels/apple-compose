@@ -24,6 +24,8 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 - [09 Fresh volumes and database images](issues/09-fresh-volumes.md): runtime volumes carry `lost+found`; apple-compose empties a new volume with the first image that mounts it so postgres-style initialisation works.
 - [08 Shared named volumes](issues/08-shared-volumes.md): runtime volumes are single-attach disk images; multi-service volumes get a warning and can be backed by a host directory via Docker's `driver_opts` bind syntax or `x-apple-compose: {shared: true}`.
 - [10 Restart policies for detached containers](issues/10-restart-supervisor.md): a per-project background supervisor launched by `up -d`/`start`, locked with flock, honouring stop markers and `on-failure[:N]`.
+- [14 Resource and DNS defaults](issues/14-resource-and-dns-defaults.md): half host memory, every CPU, and nameservers only when the gateway resolver is silent.
+- [15 Published ports on IPv6](issues/15-ipv6-published-ports.md): the supervisor relays [::] to the runtime's IPv4 listener for ports published on every address.
 - [12 Name resolution for containers apple-docker creates](issues/12-docker-run-names.md): hosts files for `docker run` on user networks, names carried as container labels so any process can rebuild them.
 - [13 Compose watch mode](issues/13-watch.md): `watch` and `up --watch` implement `develop.watch` by polling the source tree; kqueue costs a file descriptor per file.
 - [11 Docker CLI front end](issues/11-docker-cli.md): `apple-docker` translates Docker commands onto `container`, execs into it for attached commands, renders Docker tables/templates, no own state.
@@ -32,7 +34,6 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 
 - Continuous health monitoring outside `up`: the restart supervisor now runs per project and could probe healthchecks too; whether it should restart unhealthy containers as Docker's `autoheal` does.
 - Rosetta / amd64 image handling defaults when a compose file sets `platform` (`x-apple-compose: {rosetta: true}` exists; no automatic fallback).
-- Gateway DNS: on a runtime installed without administrator rights the resolver at the network gateway never answers; `APPLE_COMPOSE_DNS` is the workaround, and whether a standard install needs it is unverified.
 - Signed releases: not possible without an Apple Developer Program membership; the pipeline is ready should one appear.
 
 ## Out of scope

@@ -39,7 +39,7 @@ func loadRunner(t *testing.T, yaml string, files map[string]string) (*Runner, *b
 	}
 	errBuf := &bytes.Buffer{}
 	console := &ui.Console{Out: &bytes.Buffer{}, Err: errBuf}
-	return New(&engine.Engine{Bin: "/nonexistent"}, p, console, "test"), errBuf
+	return New(&engine.Engine{Bin: "/nonexistent", NoHostDefaults: true}, p, console, "test"), errBuf
 }
 
 func argsFor(t *testing.T, r *Runner, service string) string {

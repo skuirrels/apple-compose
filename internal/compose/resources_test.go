@@ -12,6 +12,9 @@ func withFake(t *testing.T, r *Runner) *enginetest.Fake {
 	t.Helper()
 	f := enginetest.New(t)
 	r.Engine = f.Engine
+	// A real supervisor would be this test binary; tests that check
+	// spawning install their own recorder.
+	r.SpawnSupervisor = func(string, []string, string) (int, error) { return 0, nil }
 	return f
 }
 

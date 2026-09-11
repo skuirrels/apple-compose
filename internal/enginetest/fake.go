@@ -41,7 +41,9 @@ func New(t testing.TB) *Fake {
 	dir := t.TempDir()
 	f := &Fake{t: t, dir: dir, script: filepath.Join(dir, "container"), log: filepath.Join(dir, "calls.log")}
 	f.write()
-	f.Engine = &engine.Engine{Bin: f.script, Log: os.Stderr}
+	// Host-derived defaults would make command lines depend on the machine
+	// running the tests; tests that exercise them opt back in.
+	f.Engine = &engine.Engine{Bin: f.script, Log: os.Stderr, NoHostDefaults: true}
 	return f
 }
 

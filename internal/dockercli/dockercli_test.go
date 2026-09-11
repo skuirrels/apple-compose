@@ -31,6 +31,8 @@ func newHarness(t *testing.T) *harness {
 	out, errBuf := &bytes.Buffer{}, &bytes.Buffer{}
 	app := &App{version: "test", eng: f.Engine, console: &ui.Console{Out: out, Err: errBuf}, in: strings.NewReader("")}
 	app.execFn = func(bin string, args []string) error { return nil }
+	// The default spawner would launch this test binary as a supervisor.
+	app.spawnFn = func(string, []string, string) (int, error) { return 0, nil }
 	return &harness{app: app, fake: f, out: out, err: errBuf, home: home}
 }
 

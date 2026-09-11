@@ -142,6 +142,10 @@ Containers `apple-docker run` creates on a user-defined network get the same tre
 
 `image`, `build`, `command`, `entrypoint`, `environment`, `env_file`, `working_dir`, `user`, `ports` (including ranges), `expose`, `volumes` (bind, named, anonymous, tmpfs, read-only), `tmpfs`, `networks` (several per service, aliases, `mac_address`), `network_mode: none`, `dns`, `dns_search`, `dns_opt`, `extra_hosts`, `links`, `depends_on`, `healthcheck`, `labels`, `container_name`, `scale` and `deploy.replicas`, `cpus` and `deploy.resources.limits.cpus` (rounded up to whole CPUs), `mem_limit` and `deploy.resources.limits.memory`, `shm_size`, `ulimits`, `cap_add`, `cap_drop`, `read_only`, `init`, `platform`, `stop_signal`, `stop_grace_period`, `tty`, `stdin_open`, `profiles`, `pull_policy`, `secrets` and `configs` (file, environment and inline content, mounted read-only), `extends`, `include`, `develop.watch`, `x-*` extensions.
 
+### Published ports on IPv6
+
+The runtime publishes ports on IPv4 only, while Docker answers on IPv6 too. A client that resolves `localhost` to `::1` and does not fall back to `127.0.0.1` is then refused. apple-compose closes the gap: while a container publishes a port on every address, its project's background supervisor listens on `[::]` for that port and relays each connection to the runtime's IPv4 listener, and it closes the listener when the container stops. Ports bound to a specific address such as `127.0.0.1:8080:80`, and UDP ports, are left as the runtime publishes them. `apple-docker run -p` gets the same forwarding.
+
 ### Watch mode
 
 `apple-compose watch` and `up --watch` apply a service's `develop.watch` triggers as files change: `sync` copies changed files into the container, `rebuild` rebuilds the image and recreates the service, `restart` and `sync+restart` restart it, and `sync+exec` runs a command afterwards. `ignore` and `include` patterns match a whole relative path when they contain a slash and any single path segment otherwise, so `node_modules` excludes it at any depth; `.git` is always excluded. `--prune` also deletes files inside the container when they disappear from the host.
@@ -207,8 +211,10 @@ Global Docker flags (`-H`, `--context`, `--config`, `-l`, `--tls*`) are accepted
 
 | Variable | Effect |
 | --- | --- |
-| `APPLE_COMPOSE_DNS` | Comma-separated nameservers given to every container and image build that sets none of its own. Use it when `nslookup` inside a container fails while the host resolves fine: the resolver the runtime puts on the network gateway is then unreachable, which the macOS application firewall and some VPN clients both cause. Example: `export APPLE_COMPOSE_DNS=1.1.1.1`. |
-| `APPLE_COMPOSE_MEMORY`, `APPLE_COMPOSE_CPUS` | Memory size (for example `4g`) and CPU count given to every container that sets no limit of its own. The runtime defaults to 1 GB and 4 CPUs per container, while Docker imposes no limit; SQL Server, for one, refuses to start below 2 GB. |
+| `APPLE_COMPOSE_DNS` | Comma-separated nameservers for every container and image build that sets none of its own. Unset, apple-compose probes the resolver the runtime puts on each network's gateway and, only when it is silent, supplies the Mac's own nameservers, or `1.1.1.1` and `8.8.8.8` when those are loopback proxies a container cannot reach. `runtime` keeps the runtime's resolver unconditionally. |
+| `APPLE_COMPOSE_MEMORY` | Memory size, for example `4g`, for every container that sets no limit of its own. Unset, containers get half the Mac's memory with a 2 GB floor, since Docker imposes no limit and the runtime's 1 GB stops images such as SQL Server. A VM's memory is only committed as the guest uses it. `runtime` passes no flag. |
+| `APPLE_COMPOSE_CPUS` | CPU count for every container that sets no limit of its own. Unset, containers may use every CPU, as with Docker. `runtime` keeps the runtime's four. |
+| `APPLE_COMPOSE_IPV6_PORTS` | Set to `off` to stop answering published ports on IPv6. See [Published ports on IPv6](#published-ports-on-ipv6). |
 | `CONTAINER_BIN` | Path to the `container` executable when it is not on `PATH`. |
 | `APPLE_COMPOSE_HOME` | State directory (default `~/Library/Application Support/apple-compose`). |
 | `COMPOSE_FILE`, `COMPOSE_PROJECT_NAME`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR` | Honoured as by Docker Compose. |

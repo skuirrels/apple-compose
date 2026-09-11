@@ -34,6 +34,11 @@ type SuperviseOptions struct {
 	Delay time.Duration
 	// Once makes a single pass and returns, for tests.
 	Once bool
+	// Grace keeps a supervisor that has not yet found anything to look after
+	// alive for this long, because apple-docker launches it just before the
+	// container is created. Once something has been supervised, the
+	// supervisor exits as soon as nothing is left.
+	Grace time.Duration
 }
 
 // supervised is the policy state the supervisor keeps per container.
@@ -56,6 +61,14 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 	if o.Delay <= 0 {
 		o.Delay = time.Second
 	}
+	started := time.Now()
+	seen := false
+	// IPv6 forwarding binds real ports, so single test passes skip it.
+	var forwarder *portForwarder
+	if ipv6PortsEnabled() && !o.Once {
+		forwarder = newPortForwarder(r.Console.Warn)
+		defer forwarder.close()
+	}
 	states := map[string]*supervised{}
 	var (
 		mu       sync.Mutex
@@ -70,6 +83,12 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 		cs, err := r.containers(ctx, true)
 		if err != nil {
 			return err
+		}
+		forwarded := 0
+		if forwarder != nil {
+			ports := forwardablePorts(cs)
+			forwarder.reconcile(ports)
+			forwarded = len(ports)
 		}
 		active := 0
 		for i := range cs {
@@ -134,7 +153,10 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 			// are not kept waiting for this one to boot.
 			go r.refreshWhenRunning(ctx, id, time.Now())
 		}
-		if o.Once || active == 0 {
+		if active > 0 || forwarded > 0 || len(states) > 0 {
+			seen = true
+		}
+		if o.Once || (active == 0 && forwarded == 0 && (seen || time.Since(started) >= o.Grace)) {
 			return nil
 		}
 		select {
@@ -193,8 +215,9 @@ func retriesExhausted(policy string, restarts int) bool {
 }
 
 // needsSupervisor reports whether a running container of the project carries
-// a restart policy. Labels are consulted rather than the compose file so
-// file-less commands such as `start -p name` behave the same.
+// a restart policy or publishes a port that should also answer on IPv6.
+// Labels are consulted rather than the compose file so file-less commands
+// such as `start -p name` behave the same.
 func (r *Runner) needsSupervisor(ctx context.Context) (bool, error) {
 	cs, err := r.containers(ctx, false)
 	if err != nil {
@@ -205,7 +228,7 @@ func (r *Runner) needsSupervisor(ctx context.Context) (bool, error) {
 			return true, nil
 		}
 	}
-	return false, nil
+	return ipv6PortsEnabled() && len(forwardablePorts(cs)) > 0, nil
 }
 
 // foregroundMarker records that an attached `up` session is looking after a
@@ -399,13 +422,24 @@ func supervisorRunning(projectName string) (bool, error) {
 }
 
 // EnsureSupervisor starts the background supervisor when the project has
-// restart policies and no supervisor is running yet.
+// restart policies or published ports and no supervisor is running yet.
 func (r *Runner) EnsureSupervisor(ctx context.Context) error {
 	if r.Engine.DryRun {
 		return nil
 	}
 	if need, err := r.needsSupervisor(ctx); err != nil || !need {
 		return err
+	}
+	return r.StartSupervisor(ctx)
+}
+
+// StartSupervisor starts the background supervisor unless one is running,
+// without first checking that the project needs one. apple-docker uses it for
+// an attached run, whose container does not exist until after the call; the
+// supervisor's grace period covers the gap.
+func (r *Runner) StartSupervisor(ctx context.Context) error {
+	if r.Engine.DryRun {
+		return nil
 	}
 	running, err := supervisorRunning(r.Project.Name)
 	if err != nil || running {
@@ -421,7 +455,7 @@ func (r *Runner) EnsureSupervisor(ctx context.Context) error {
 	}
 	pid, err := spawn(r.Project.Name, r.supervisorArgs(), logPath)
 	if err != nil {
-		r.Console.Warn("restart policies are not supervised: %v", err)
+		r.Console.Warn("restart policies and IPv6 ports are not supervised: %v", err)
 		return nil
 	}
 	r.Console.Step("Supervisor", fmt.Sprintf("%s (pid %d)", r.Project.Name, pid), "Started")

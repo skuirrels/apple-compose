@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/skuirrels/apple-compose/internal/compose"
-	"github.com/skuirrels/apple-compose/internal/engine"
 )
 
 // runOptions are Docker's `run`/`create` flags.
@@ -190,7 +189,7 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	}
 	dns := o.dns
 	if len(dns) == 0 {
-		dns = engine.DefaultDNS()
+		dns = a.eng.DefaultDNS(cmd.Context(), runtimeNetworks(o.networks)...)
 	}
 	for _, d := range dns {
 		args = append(args, "--dns", d)
@@ -220,11 +219,11 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	}
 	if o.memory != "" {
 		args = append(args, "--memory", o.memory)
-	} else if m := engine.DefaultMemory(); m != "" {
+	} else if m := a.eng.DefaultMemory(); m != "" {
 		args = append(args, "--memory", m)
 	}
 	if o.cpus == "" {
-		if n := engine.DefaultCPUs(); n > 0 {
+		if n := a.eng.DefaultCPUs(); n > 0 {
 			args = append(args, "--cpus", strconv.Itoa(n))
 		}
 	}
@@ -266,6 +265,11 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 		if verb == "run" && !o.detach {
 			a.warn("--restart %s applies once the container runs detached; this attached session ends when it exits", o.restart)
 		}
+	}
+	if len(o.publish) > 0 && len(managed) == 0 {
+		// The supervisor forwards published ports over IPv6 and finds the
+		// containers it looks after through these labels.
+		managed = managedLabels(service)
 	}
 	hostsPath, hostsLabels, err := a.hostsFileFor(o)
 	if err != nil {
@@ -329,7 +333,8 @@ func (a *App) runCommand() *cobra.Command {
 			if verb == "create" {
 				return a.runInTwoSteps(cmd.Context(), o, translated)
 			}
-			supervised := o.detach && o.restart != "" && o.restart != "no"
+			publishes := len(o.publish) > 0
+			supervised := o.detach && ((o.restart != "" && o.restart != "no") || publishes)
 			if supervised || (o.detach && hostsPath != "") {
 				// Stay in the process so hosts files and the supervisor can
 				// be brought up to date once the container is running.
@@ -343,6 +348,11 @@ func (a *App) runCommand() *cobra.Command {
 					a.ensureSupervisor(cmd.Context())
 				}
 				return nil
+			}
+			if publishes {
+				// The container is created after this process becomes the
+				// runtime's, so the supervisor starts first and waits for it.
+				a.startSupervisor(cmd.Context())
 			}
 			return a.exec(translated...)
 		},
@@ -403,6 +413,9 @@ func (a *App) runInTwoSteps(ctx context.Context, o runOptions, create []string) 
 		return err
 	}
 	a.refreshHosts(ctx)
+	if len(o.publish) > 0 {
+		a.startSupervisor(ctx)
+	}
 	watch, stop := context.WithCancel(ctx)
 	defer stop()
 	go a.refreshWhenRunning(watch, id)
@@ -431,4 +444,17 @@ func (a *App) pullPolicy(ctx context.Context, policy, image string) error {
 		}
 	}
 	return nil
+}
+
+// runtimeNetworks maps Docker's network names onto the runtime's, for the
+// DNS probe: Docker's bridge is the runtime's default network.
+func runtimeNetworks(nets []string) []string {
+	var out []string
+	for _, n := range nets {
+		if n == "" || n == "bridge" {
+			n = "default"
+		}
+		out = append(out, n)
+	}
+	return out
 }

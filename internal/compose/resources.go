@@ -291,7 +291,7 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 	}
 	// Builds resolve names through the builder VM, which uses the same
 	// gateway resolver, so the default nameservers apply there too.
-	for _, d := range engine.DefaultDNS() {
+	for _, d := range r.Engine.DefaultDNS(ctx, "default") {
 		args = append(args, "--dns", d)
 	}
 	if b.Pull || o.PullBuild {
