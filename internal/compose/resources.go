@@ -323,7 +323,7 @@ func (r *Runner) BuildService(ctx context.Context, s types.ServiceConfig, o Imag
 	if len(b.AdditionalContexts) > 0 {
 		r.warnOnce("build-ctx:"+s.Name, "service %s: build.additional_contexts are ignored", s.Name)
 	}
-	// `container build --quiet` hangs on 1.3.1, so quiet builds discard the
+	// `container build --quiet` hangs, confirmed through 1.6.1, so quiet builds discard the
 	// output here instead of asking the runtime to suppress it.
 	args = append(args, "--progress", "plain", ctxDir)
 	r.Console.Info(" %s Building %s", r.Console.Paint("36", "⠿"), s.Name)

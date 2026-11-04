@@ -330,7 +330,7 @@ func (a *App) buildCommand() *cobra.Command {
 			}
 			switch {
 			case quiet:
-				// The runtime's --quiet hangs on 1.3.1; plain progress is
+				// The runtime's --quiet hangs, confirmed through 1.6.1; plain progress is
 				// the closest quiet output that completes.
 				bargs = append(bargs, "--progress", "plain")
 			case progress != "" && progress != "auto":

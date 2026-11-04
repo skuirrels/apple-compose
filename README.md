@@ -25,7 +25,7 @@ shop-web-1   nginx:alpine     "nginx -g daemon off;"  web       11 seconds ago  
 ## Requirements
 
 - Apple silicon Mac running **macOS 26** or later (the runtime's custom networks need it).
-- [Apple `container`](https://github.com/apple/container/releases) 1.3 or later, with its services started (`container system start`). Tested against 1.3.1 and 1.4.1.
+- [Apple `container`](https://github.com/apple/container/releases) 1.3 or later, with its services started (`container system start`). Tested against 1.3.1, 1.4.1 and 1.6.1.
 
 macOS asks once whether the runtime's helper (`container-runtime-linux`) may use the local network. Published ports stay unreachable until that is allowed under System Settings › Privacy & Security › Local Network.
 
@@ -128,7 +128,7 @@ Apple's runtime runs each container in its own lightweight VM and exposes a CLI 
 
 ### Service discovery
 
-The runtime cannot resolve bare container names on custom networks ([apple/container#1809](https://github.com/apple/container/issues/1809)). apple-compose therefore bind-mounts a generated hosts file over `/etc/hosts` in every service container and rewrites it as peers start. Names resolve without a shell in the image, without DNS setup, and immediately after a peer is (re)created:
+The runtime cannot resolve bare container names on custom networks ([apple/container#1809](https://github.com/apple/container/issues/1809)). Runtime 1.6 added DNS aliases for a network attachment, but macOS resolves those through its own resolver files rather than containers resolving them between themselves, and the request above is still open: on 1.6.1, two containers sharing a custom network resolve neither each other's names nor an alias. apple-compose therefore bind-mounts a generated hosts file over `/etc/hosts` in every service container and rewrites it as peers start. Names resolve without a shell in the image, without DNS setup, and immediately after a peer is (re)created:
 
 - every service name, container name, `container_name`, `hostname` and network alias of peers on a shared network;
 - `extra_hosts`, including `host-gateway`;
@@ -197,7 +197,7 @@ volumes:
 | `ps`, `container ls` | `-a`, `-q`, `-n`, `-l`, `--no-trunc`, `--filter name/id/status/label/ancestor/network/volume`, `--format table/json/template` | `--size` is unavailable. |
 | `start`, `stop`, `restart`, `kill`, `rm`, `wait`, `port`, `top`, `cp`, `export`, `stats`, `logs`, `exec`, `attach` | Docker's flags | `wait` prints 0 because the runtime reports no exit code for detached containers; `attach` works only on stopped containers; `logs --since/--until` are ignored; `cp` writes into the container's own filesystem, so a destination under a volume or bind mount is written beneath the mount and never appears. Copy to a path such as `/tmp` and move the file inside the container. |
 | `inspect` | containers, images, networks, volumes; `--format`, `--type` | Docker-shaped JSON (`.State`, `.Config`, `.NetworkSettings`, `.Mounts`, `.HostConfig`) with the runtime's full record under `.Runtime`. |
-| `images`, `pull`, `push`, `tag`, `rmi`, `build`, `image ls/rm/inspect/prune/save/load` | Docker's flags; `--filter reference=`, `--digests`, `--format` | `build -q` uses plain progress because the runtime's quiet mode hangs; `history` and `import` are unavailable. |
+| `images`, `pull`, `push`, `tag`, `rmi`, `build`, `image ls/rm/inspect/prune/save/load` | Docker's flags; `--filter reference=`, `--digests`, `--format` | `build -q` uses plain progress because the runtime's quiet mode hangs, still so on 1.6.1; `history` and `import` are unavailable. |
 | `network ls/create/rm/inspect/prune` | `--subnet`, `--internal`, `--label`, `-o`, filters, `--format` | `connect`/`disconnect` are impossible: the runtime attaches networks at create time. |
 | `volume ls/create/rm/inspect/prune` | `--label`, `--opt` (`size=` maps to the runtime's size), filters, `--format` | |
 | `system df/prune/info`, `info`, `version`, `login`, `logout` | | `prune` asks for confirmation like Docker; `login -p` feeds the runtime's stdin. |
