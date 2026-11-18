@@ -49,11 +49,17 @@ type supervised struct {
 	settled bool
 }
 
-// Supervise restarts exited containers of the project according to their
-// restart policies, as Docker's daemon would. It returns when nothing is left
-// to supervise: every policy container is either gone, stopped on purpose, or
-// has exhausted its retries. Containers stopped by an apple-compose command
-// carry a marker in the state directory and are never restarted.
+// Supervise is the project's background process. It has three jobs, all of
+// which need something alive for as long as the project is:
+//
+//   - restarting exited containers according to their restart policies, as
+//     Docker's daemon would;
+//   - answering published ports over IPv6, which the runtime does not do;
+//   - keeping the generated hosts files in step as containers come back.
+//
+// It returns when none of those has anything left to do. Containers stopped
+// by an apple-compose command carry a marker in the state directory and are
+// never restarted.
 func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 	if o.Interval <= 0 {
 		o.Interval = 2 * time.Second
@@ -153,10 +159,8 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 			// are not kept waiting for this one to boot.
 			go r.refreshWhenRunning(ctx, id, time.Now())
 		}
-		if active > 0 || forwarded > 0 || len(states) > 0 {
-			seen = true
-		}
-		if o.Once || (active == 0 && forwarded == 0 && (seen || time.Since(started) >= o.Grace)) {
+		seen = seen || active > 0 || forwarded > 0 || len(states) > 0
+		if o.Once || !keepRunning(active, forwarded, seen, time.Since(started), o.Grace) {
 			return nil
 		}
 		select {
@@ -165,6 +169,18 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 		case <-time.After(o.Interval):
 		}
 	}
+}
+
+// keepRunning reports whether the supervisor has a reason to stay alive after
+// a pass. Work in hand always keeps it. With none, it waits out the grace
+// period only until the first time it has seen work, which is what lets a
+// supervisor start just before the container it was launched for exists
+// without lingering once that container has come and gone.
+func keepRunning(active, forwarded int, seenWork bool, waited, grace time.Duration) bool {
+	if active > 0 || forwarded > 0 {
+		return true
+	}
+	return !seenWork && waited < grace
 }
 
 // restartsPath is the file holding how often the supervisor restarted a
@@ -241,14 +257,19 @@ func foregroundMarker(projectName, id string) string {
 	return filepath.Join(dir, "foreground", id)
 }
 
+// markForeground records this process as the owner. The pid is what makes the
+// marker safe: a session killed outright never runs its deferred cleanup, and
+// a marker left behind would otherwise disable the container's restart policy
+// for good.
 func markForeground(projectName string, ids []string) {
+	pid := strconv.Itoa(os.Getpid())
 	for _, id := range ids {
 		p := foregroundMarker(projectName, id)
 		if p == "" {
 			continue
 		}
 		_ = os.MkdirAll(filepath.Dir(p), 0o755)
-		_ = os.WriteFile(p, nil, 0o644)
+		_ = os.WriteFile(p, []byte(pid), 0o644)
 	}
 }
 
@@ -260,13 +281,36 @@ func clearForeground(projectName string, ids []string) {
 	}
 }
 
+// inForeground reports whether a live session is attached to the container.
+// A marker whose owner has gone is deleted, so the next pass supervises the
+// container normally.
 func inForeground(projectName, id string) bool {
 	p := foregroundMarker(projectName, id)
 	if p == "" {
 		return false
 	}
-	_, err := os.Stat(p)
-	return err == nil
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && processAlive(pid) {
+		return true
+	}
+	_ = os.Remove(p)
+	return false
+}
+
+// processAlive reports whether a process id still belongs to a live process.
+// Signal 0 performs the existence and permission checks without delivering
+// anything. Refusal means the process is there but belongs to someone else,
+// which is what `sudo apple-compose up` looks like to a supervisor running as
+// the ordinary user, so it counts as alive.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // stopMarker is the file recording that apple-compose stopped a container on

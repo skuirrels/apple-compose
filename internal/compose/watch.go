@@ -84,8 +84,9 @@ func (r *Runner) Watch(ctx context.Context, o WatchOptions) error {
 		o.Interval = DefaultWatchInterval
 	}
 	state := make([]map[string]stamp, len(rules))
+	lastErr := make([]string, len(rules))
 	for i, rule := range rules {
-		state[i] = scanTree(rule)
+		state[i], _ = scanTree(rule)
 		if rule.initial && rule.action != types.WatchActionRebuild {
 			if err := r.applyWatch(ctx, rule, sortedPaths(state[i]), nil, o); err != nil {
 				r.Console.Warn("watch %s: %v", rule.service, err)
@@ -104,15 +105,34 @@ func (r *Runner) Watch(ctx context.Context, o WatchOptions) error {
 		case <-ticker.C:
 		}
 		for i, rule := range rules {
-			now := scanTree(rule)
+			now, complete := scanTree(rule)
+			if !complete {
+				now = carryForward(state[i], now)
+			}
 			changed, deleted := diffTrees(state[i], now)
-			state[i] = now
 			if len(changed) == 0 && len(deleted) == 0 {
 				continue
 			}
 			if err := r.applyWatch(ctx, rule, changed, deleted, o); err != nil {
-				r.Console.Fail("Watch", rule.service, string(rule.action), err)
+				if msg := err.Error(); msg != lastErr[i] {
+					lastErr[i] = msg
+					r.Console.Fail("Watch", rule.service, string(rule.action), err)
+				}
+				if retryable(rule.action) {
+					// The baseline stays put so the next pass carries the
+					// same files again: a container that is restarting must
+					// not cost the user an edit. Copying a file costs little
+					// enough to repeat every interval.
+					continue
+				}
+				// A rebuild or a restart is too expensive to repeat every
+				// interval, and a build that fails on this tree will fail on
+				// the next tick too, so the change is recorded as seen and
+				// the next edit triggers the work again.
+			} else {
+				lastErr[i] = ""
 			}
+			state[i] = now
 		}
 	}
 }
@@ -168,19 +188,28 @@ func (r *Runner) watchRules(services []string) ([]watchRule, error) {
 	return out, nil
 }
 
-// scanTree records the current state of a watched path. Errors are folded
-// into an empty result: a tree that cannot be read this time round is simply
-// reported as changed when it can be.
-func scanTree(rule watchRule) map[string]stamp {
+// scanTree records the current state of a watched path. It also reports
+// whether the scan saw the whole tree: an unreadable directory yields no
+// entries, which is indistinguishable from an empty one, and a caller that
+// deletes what it cannot see would wipe the container's copy.
+func scanTree(rule watchRule) (map[string]stamp, bool) {
 	out := map[string]stamp{}
 	if rule.file {
-		if info, err := os.Stat(rule.root); err == nil {
+		info, err := os.Stat(rule.root)
+		switch {
+		case err == nil:
 			out[rule.root] = stamp{info.ModTime(), info.Size()}
+		case !errors.Is(err, fs.ErrNotExist):
+			// A file that is gone is a deletion; anything else is a scan
+			// this pass cannot trust.
+			return out, false
 		}
-		return out
+		return out, true
 	}
+	complete := true
 	_ = filepath.WalkDir(rule.root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			complete = false
 			return nil
 		}
 		rel, relErr := filepath.Rel(rule.root, p)
@@ -203,7 +232,7 @@ func scanTree(rule watchRule) map[string]stamp {
 		out[p] = stamp{info.ModTime(), info.Size()}
 		return nil
 	})
-	return out
+	return out, complete
 }
 
 // watchIgnores applies a trigger's include and ignore patterns to one path
@@ -252,6 +281,31 @@ func matchWatchPattern(pattern, rel string, segments []string) bool {
 		}
 	}
 	return false
+}
+
+// retryable reports whether a failed trigger is cheap enough to attempt again
+// on the next pass. Only the sync family is: its job is to put files inside a
+// container, and until they are there the container is running something the
+// user did not write.
+func retryable(action types.WatchAction) bool {
+	switch action {
+	case types.WatchActionSync, types.WatchActionSyncRestart, types.WatchActionSyncExec:
+		return true
+	}
+	return false
+}
+
+// carryForward copies the entries a scan could not see back into it, so an
+// incomplete pass reports no deletions. A tree that is briefly unreadable,
+// during a branch switch for one, must never be taken for a tree someone
+// emptied, because the caller deletes what is missing from the container.
+func carryForward(prev, now map[string]stamp) map[string]stamp {
+	for p, st := range prev {
+		if _, ok := now[p]; !ok {
+			now[p] = st
+		}
+	}
+	return now
 }
 
 // diffTrees reports the paths that appeared or changed and those that went.

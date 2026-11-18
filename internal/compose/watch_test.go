@@ -56,7 +56,10 @@ func TestScanTreeSkipsIgnoredDirectories(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got := scanTree(watchRule{root: dir, ignore: []string{"node_modules", "*.tmp"}})
+	got, complete := scanTree(watchRule{root: dir, ignore: []string{"node_modules", "*.tmp"}})
+	if !complete {
+		t.Fatal("a readable tree must scan completely")
+	}
 	want := []string{filepath.Join(dir, "src", "main.go"), filepath.Join(dir, "src", "util.go")}
 	if len(got) != len(want) {
 		t.Fatalf("scanned %v, want %v", sortedPaths(got), want)
@@ -150,5 +153,43 @@ services:
 	}
 	if rules, err := r.watchRules([]string{"web"}); err != nil || len(rules) != 1 {
 		t.Fatalf("the named service must be watched: %v %v", rules, err)
+	}
+}
+
+func TestScanTreeReportsAnUnreadableTree(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "gone")
+	if got, complete := scanTree(watchRule{root: missing}); complete || len(got) != 0 {
+		t.Fatalf("a missing tree must scan as incomplete, got %v %v", got, complete)
+	}
+	// A watched file that is simply gone is a deletion, not a failure.
+	if got, complete := scanTree(watchRule{root: missing, file: true}); !complete || len(got) != 0 {
+		t.Fatalf("a missing file must scan as complete, got %v %v", got, complete)
+	}
+}
+
+func TestCarryForwardHidesDeletionsFromAnIncompleteScan(t *testing.T) {
+	prev := map[string]stamp{"a": {size: 1}, "b": {size: 2}}
+	now := carryForward(prev, map[string]stamp{"b": {size: 3}})
+	changed, deleted := diffTrees(prev, now)
+	if !reflect.DeepEqual(changed, []string{"b"}) {
+		t.Fatalf("a real change must still be seen, got %v", changed)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("an unseen path must not count as deleted, got %v", deleted)
+	}
+}
+
+func TestRetryableActions(t *testing.T) {
+	for _, a := range []types.WatchAction{types.WatchActionSync, types.WatchActionSyncRestart, types.WatchActionSyncExec} {
+		if !retryable(a) {
+			t.Errorf("%s puts files in the container, so a failure must be retried", a)
+		}
+	}
+	// Repeating these every interval would rebuild or bounce the service
+	// continuously while the tree stays broken.
+	for _, a := range []types.WatchAction{types.WatchActionRebuild, types.WatchActionRestart} {
+		if retryable(a) {
+			t.Errorf("%s is too expensive to retry on every pass", a)
+		}
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/skuirrels/apple-compose/internal/ui"
 )
 
 func (a *App) startCommand() *cobra.Command {
@@ -99,16 +101,9 @@ func (a *App) killCommand() *cobra.Command {
 func (a *App) pauseCommand(name string) *cobra.Command {
 	return &cobra.Command{
 		Use:   name + " [SERVICE...]",
-		Short: fmt.Sprintf("%s services (not supported by the container runtime)", capitalise(name)),
+		Short: fmt.Sprintf("%s services (not supported by the container runtime)", ui.Capitalise(name)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("`%s` is not supported: the container runtime cannot freeze a container's VM", name)
 		},
 	}
-}
-
-func capitalise(s string) string {
-	if s == "" {
-		return s
-	}
-	return string(s[0]-32) + s[1:]
 }

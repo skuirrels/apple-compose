@@ -32,12 +32,13 @@ A polished, public, installable `docker compose` equivalent for Apple's `contain
 
 ## Not yet specified
 
-- Continuous health monitoring outside `up`: the restart supervisor now runs per project and could probe healthchecks too; whether it should restart unhealthy containers as Docker's `autoheal` does.
-- Rosetta / amd64 image handling defaults when a compose file sets `platform` (`x-apple-compose: {rosetta: true}` exists; no automatic fallback).
-- Signed releases: not possible without an Apple Developer Program membership; the pipeline is ready should one appear.
+- Nothing: every question raised so far is either decided or ruled out below.
 
 ## Out of scope
 
 - Implementing a Docker Engine API socket shim (a different product; see appautomaton/docker-for-apple-container).
 - macOS 15 support: the runtime has no custom networks or container-to-container networking there.
 - Kubernetes (`container k8s`) integration.
+- Continuous health monitoring outside `up`: Docker Compose does not restart unhealthy containers either, so matching it means not building an `autoheal`. Ruled out 2026-11-18.
+- Rosetta and amd64 fallback when a compose file sets `platform`: the runtime decides how to run a foreign image, and `x-apple-compose: {rosetta: true}` already forces the choice where it matters. Ruled out 2026-11-18.
+- Signed and notarised releases: impossible without an Apple Developer Program membership, which the user does not have. The release pipeline already notarises when the secrets exist, so there is nothing to build. Ruled out 2026-11-18.

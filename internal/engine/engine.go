@@ -57,6 +57,8 @@ type Engine struct {
 
 	dnsMu        sync.Mutex
 	dnsByGateway map[string][]string
+	// runtimeDNS caches whether the runtime has nameservers of its own.
+	runtimeDNS *bool
 }
 
 // ExitError describes a `container` invocation that returned non-zero.

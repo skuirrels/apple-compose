@@ -11,13 +11,15 @@ import (
 
 // probedEngine returns an engine whose host looks like the given machine and
 // whose networks all have the gateway 192.168.65.1.
-func probedEngine(t *testing.T, memGiB uint64, cpus int, gatewayAnswers bool, resolvers []string) (*engine.Engine, *int) {
+func probedEngine(t *testing.T, memGiB uint64, cpus int, gatewayAnswers bool, resolvers []string) (*engine.Engine, *enginetest.Fake, *int) {
 	t.Helper()
 	for _, k := range []string{engine.EnvDefaultMemory, engine.EnvDefaultCPUs, engine.EnvDefaultDNS} {
 		t.Setenv(k, "")
 	}
 	f := enginetest.New(t)
 	f.On("network inspect", `[{"id":"default","configuration":{"name":"default"},"status":{"ipv4Gateway":"192.168.65.1"}}]`, 0)
+	// A runtime with no nameservers of its own, which is the default.
+	f.On("system property ls --format json", `{"container":{"cpus":4,"memory":"1gb"}}`, 0)
 	probes := 0
 	e := f.Engine
 	e.NoHostDefaults = false
@@ -33,15 +35,15 @@ func probedEngine(t *testing.T, memGiB uint64, cpus int, gatewayAnswers bool, re
 		},
 		Resolvers: func() []string { return resolvers },
 	}
-	return e, &probes
+	return e, f, &probes
 }
 
 func TestDefaultMemoryIsHalfTheHostWithAFloor(t *testing.T) {
-	e, _ := probedEngine(t, 24, 14, true, nil)
+	e, _, _ := probedEngine(t, 24, 14, true, nil)
 	if got := e.DefaultMemory(); got != "12g" {
 		t.Fatalf("24 GiB host: got %q, want 12g", got)
 	}
-	e, _ = probedEngine(t, 3, 4, true, nil)
+	e, _, _ = probedEngine(t, 3, 4, true, nil)
 	if got := e.DefaultMemory(); got != "2g" {
 		t.Fatalf("small host must still get the 2g floor, got %q", got)
 	}
@@ -56,7 +58,7 @@ func TestDefaultMemoryIsHalfTheHostWithAFloor(t *testing.T) {
 }
 
 func TestDefaultCPUsIsEveryHostCPU(t *testing.T) {
-	e, _ := probedEngine(t, 24, 14, true, nil)
+	e, _, _ := probedEngine(t, 24, 14, true, nil)
 	if got := e.DefaultCPUs(); got != 14 {
 		t.Fatalf("got %d, want 14", got)
 	}
@@ -71,7 +73,7 @@ func TestDefaultCPUsIsEveryHostCPU(t *testing.T) {
 }
 
 func TestDefaultDNSKeepsAWorkingGatewayResolver(t *testing.T) {
-	e, probes := probedEngine(t, 24, 14, true, []string{"10.0.0.53"})
+	e, _, probes := probedEngine(t, 24, 14, true, []string{"10.0.0.53"})
 	if got := e.DefaultDNS(context.Background(), "default"); got != nil {
 		t.Fatalf("a gateway that answers must be left alone, got %v", got)
 	}
@@ -83,11 +85,11 @@ func TestDefaultDNSKeepsAWorkingGatewayResolver(t *testing.T) {
 
 func TestDefaultDNSReplacesASilentGateway(t *testing.T) {
 	ctx := context.Background()
-	e, _ := probedEngine(t, 24, 14, false, []string{"127.0.2.2", "fe80::1", "10.0.0.53"})
+	e, _, _ := probedEngine(t, 24, 14, false, []string{"127.0.2.2", "fe80::1", "10.0.0.53"})
 	if got := e.DefaultDNS(ctx, "app"); !reflect.DeepEqual(got, []string{"10.0.0.53"}) {
 		t.Fatalf("reachable host resolvers must be used, got %v", got)
 	}
-	e, _ = probedEngine(t, 24, 14, false, []string{"127.0.2.2", "127.0.2.3"})
+	e, _, _ = probedEngine(t, 24, 14, false, []string{"127.0.2.2", "127.0.2.3"})
 	if got := e.DefaultDNS(ctx, "app"); !reflect.DeepEqual(got, []string{"1.1.1.1", "8.8.8.8"}) {
 		t.Fatalf("loopback-only host resolvers must fall back to public ones, got %v", got)
 	}
@@ -97,7 +99,7 @@ func TestDefaultDNSReplacesASilentGateway(t *testing.T) {
 }
 
 func TestDefaultDNSEnvironment(t *testing.T) {
-	e, probes := probedEngine(t, 24, 14, false, nil)
+	e, _, probes := probedEngine(t, 24, 14, false, nil)
 	t.Setenv(engine.EnvDefaultDNS, "9.9.9.9, 1.0.0.1")
 	if got := e.DefaultDNS(context.Background(), "default"); !reflect.DeepEqual(got, []string{"9.9.9.9", "1.0.0.1"}) {
 		t.Fatalf("environment must win, got %v", got)
@@ -108,5 +110,24 @@ func TestDefaultDNSEnvironment(t *testing.T) {
 	}
 	if *probes != 0 {
 		t.Fatalf("an explicit setting must not probe, probed %d times", *probes)
+	}
+}
+
+func TestDefaultDNSDefersToTheRuntimesOwnNameservers(t *testing.T) {
+	ctx := context.Background()
+	e, f, probes := probedEngine(t, 24, 14, false, []string{"10.0.0.53"})
+	// The gateway is silent, so without runtime configuration apple-compose
+	// supplies nameservers of its own.
+	if got := e.DefaultDNS(ctx, "app"); !reflect.DeepEqual(got, []string{"10.0.0.53"}) {
+		t.Fatalf("got %v, want the host resolver", got)
+	}
+
+	e, f, probes = probedEngine(t, 24, 14, false, []string{"10.0.0.53"})
+	f.On("system property ls --format json", `{"container":{"cpus":4,"memory":"1gb","dns":{"nameservers":["9.9.9.9"]}}}`, 0)
+	if got := e.DefaultDNS(ctx, "app"); got != nil {
+		t.Fatalf("a runtime with its own nameservers must be left alone, got %v", got)
+	}
+	if *probes != 0 {
+		t.Fatalf("a configured runtime must not be probed, probed %d times", *probes)
 	}
 }

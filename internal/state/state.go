@@ -3,9 +3,10 @@
 package state
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // EnvHome overrides the state directory.
@@ -24,10 +25,23 @@ func Home() (string, error) {
 	return p, os.MkdirAll(p, 0o755)
 }
 
+// safeSegment rejects a name that would escape the directory it is joined to.
+// Names reach here from the command line, so a container called ../../x must
+// not place a generated file outside the state directory.
+func safeSegment(kind, name string) error {
+	if name == "" {
+		return fmt.Errorf("%s name is empty", kind)
+	}
+	if name == "." || name == ".." || strings.ContainsRune(name, filepath.Separator) || strings.ContainsRune(name, '/') {
+		return fmt.Errorf("invalid %s name %q: it must not contain a path", kind, name)
+	}
+	return nil
+}
+
 // ProjectDir returns the state directory of one project.
 func ProjectDir(project string) (string, error) {
-	if project == "" {
-		return "", errors.New("project name is empty")
+	if err := safeSegment("project", project); err != nil {
+		return "", err
 	}
 	h, err := Home()
 	if err != nil {
@@ -49,6 +63,9 @@ func HostsDir(project string) (string, error) {
 
 // HostsPath returns the hosts file path for one container.
 func HostsPath(project, container string) (string, error) {
+	if err := safeSegment("container", container); err != nil {
+		return "", err
+	}
 	d, err := HostsDir(project)
 	if err != nil {
 		return "", err
@@ -68,6 +85,9 @@ func SecretsDir(project string) (string, error) {
 
 // RemoveProject deletes all state for a project.
 func RemoveProject(project string) error {
+	if err := safeSegment("project", project); err != nil {
+		return err
+	}
 	h, err := Home()
 	if err != nil {
 		return err
@@ -77,6 +97,9 @@ func RemoveProject(project string) error {
 
 // SharedVolumeDir returns the host directory backing a shared volume.
 func SharedVolumeDir(name string) (string, error) {
+	if err := safeSegment("volume", name); err != nil {
+		return "", err
+	}
 	h, err := Home()
 	if err != nil {
 		return "", err
@@ -87,6 +110,9 @@ func SharedVolumeDir(name string) (string, error) {
 
 // RemoveSharedVolume deletes a shared volume's directory.
 func RemoveSharedVolume(name string) error {
+	if err := safeSegment("volume", name); err != nil {
+		return err
+	}
 	h, err := Home()
 	if err != nil {
 		return err

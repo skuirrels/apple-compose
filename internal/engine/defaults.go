@@ -106,6 +106,12 @@ func (e *Engine) DefaultDNS(ctx context.Context, networks ...string) []string {
 	if e.NoHostDefaults || e.DryRun {
 		return nil
 	}
+	// Runtime 1.7 takes default nameservers in its own configuration. A user
+	// who has set them there has already answered this question, so nothing
+	// is probed and nothing is passed: the runtime applies its own.
+	if e.runtimeDNSConfigured(ctx) {
+		return nil
+	}
 	network := "default"
 	for _, n := range networks {
 		if n == "none" {
@@ -235,4 +241,31 @@ func parseResolvers(out string) []string {
 		}
 	}
 	return servers
+}
+
+// systemProperties is the shape `container system property ls --format json`
+// prints, trimmed to the keys that matter here.
+type systemProperties struct {
+	Container struct {
+		DNS *struct {
+			Nameservers []string `json:"nameservers"`
+		} `json:"dns"`
+	} `json:"container"`
+}
+
+// runtimeDNSConfigured reports whether the runtime has default nameservers of
+// its own. The answer is read once per process, since it cannot change while
+// a command runs, and a runtime too old to know the flag simply answers no.
+func (e *Engine) runtimeDNSConfigured(ctx context.Context) bool {
+	e.dnsMu.Lock()
+	defer e.dnsMu.Unlock()
+	if e.runtimeDNS == nil {
+		configured := false
+		var props systemProperties
+		if err := e.JSON(ctx, &props, "system", "property", "ls", "--format", "json"); err == nil {
+			configured = props.Container.DNS != nil && len(props.Container.DNS.Nameservers) > 0
+		}
+		e.runtimeDNS = &configured
+	}
+	return *e.runtimeDNS
 }

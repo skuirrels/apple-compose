@@ -65,3 +65,25 @@ func TestDefaultHomeIsApplicationSupport(t *testing.T) {
 		t.Fatalf("Home = %q, want %q", got, want)
 	}
 }
+
+func TestNamesCannotEscapeTheStateDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(EnvHome, home)
+	for _, name := range []string{"../escaped", "..", ".", "a/b", ""} {
+		if _, err := HostsPath("p", name); err == nil {
+			t.Errorf("container name %q must be rejected", name)
+		}
+		if _, err := ProjectDir(name); err == nil {
+			t.Errorf("project name %q must be rejected", name)
+		}
+		if err := RemoveProject(name); err == nil {
+			t.Errorf("removing project %q must be rejected", name)
+		}
+		if _, err := SharedVolumeDir(name); err == nil {
+			t.Errorf("volume name %q must be rejected", name)
+		}
+	}
+	if _, err := HostsPath("p", "web"); err != nil {
+		t.Fatalf("an ordinary name must still work: %v", err)
+	}
+}

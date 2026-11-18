@@ -348,3 +348,47 @@ func TestSuperviseExitsPromptlyOnceWorkIsDone(t *testing.T) {
 		t.Fatalf("waited %v after its work was done", elapsed)
 	}
 }
+
+func TestForegroundMarkerExpiresWithItsOwner(t *testing.T) {
+	t.Setenv("APPLE_COMPOSE_HOME", t.TempDir())
+	markForeground("t", []string{"t-a-1"})
+	if !inForeground("t", "t-a-1") {
+		t.Fatal("this process owns the marker, so the container is in the foreground")
+	}
+	// A session killed outright never clears its marker. Rewriting it with
+	// an id no process can hold stands in for that.
+	dead := exec.Command("true")
+	if err := dead.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(foregroundMarker("t", "t-a-1"), []byte(strconv.Itoa(dead.Process.Pid)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if inForeground("t", "t-a-1") {
+		t.Fatal("a marker whose owner has gone must not hold off the supervisor")
+	}
+	if _, err := os.Stat(foregroundMarker("t", "t-a-1")); err == nil {
+		t.Fatal("the stale marker must be removed")
+	}
+}
+
+func TestKeepRunning(t *testing.T) {
+	cases := []struct {
+		name              string
+		active, forwarded int
+		seenWork          bool
+		waited, grace     time.Duration
+		want              bool
+	}{
+		{"a container to restart", 1, 0, true, time.Hour, time.Minute, true},
+		{"a port to forward", 0, 1, true, time.Hour, time.Minute, true},
+		{"work is done", 0, 0, true, 0, time.Minute, false},
+		{"waiting for the container it was launched for", 0, 0, false, time.Second, time.Minute, true},
+		{"nothing ever turned up", 0, 0, false, time.Minute, time.Minute, false},
+	}
+	for _, c := range cases {
+		if got := keepRunning(c.active, c.forwarded, c.seenWork, c.waited, c.grace); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+}

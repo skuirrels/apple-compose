@@ -61,6 +61,6 @@ func (a *App) superviseCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&once, "once", false, "Make a single pass and exit")
 	cmd.Flags().DurationVar(&interval, "interval", 2*time.Second, "Polling interval")
-	cmd.Flags().DurationVar(&grace, "grace", 30*time.Second, "Keep running this long after starting even with nothing to supervise")
+	cmd.Flags().DurationVar(&grace, "grace", 60*time.Second, "Keep running this long after starting even with nothing to supervise")
 	return cmd
 }

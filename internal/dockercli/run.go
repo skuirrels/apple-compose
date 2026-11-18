@@ -350,8 +350,13 @@ func (a *App) runCommand() *cobra.Command {
 				return nil
 			}
 			if publishes {
-				// The container is created after this process becomes the
-				// runtime's, so the supervisor starts first and waits for it.
+				// The supervisor starts before this process becomes the
+				// runtime's, and waits a short while for the container to
+				// appear. A missing image is pulled first so that wait is
+				// not spent downloading.
+				if err := a.ensureImage(cmd.Context(), args[0]); err != nil {
+					return err
+				}
 				a.startSupervisor(cmd.Context())
 			}
 			return a.exec(translated...)
@@ -399,18 +404,25 @@ func (a *App) createCommand() *cobra.Command {
 // runInTwoSteps creates a container, then starts it with the terminal
 // attached, refreshing hosts files once it is up. It is how `run` handles a
 // container whose names have to be published to its neighbours.
+//
+// `container create` takes --rm itself and removes the container once it
+// stops, so the flag is left in the arguments rather than filtered out of
+// them: a command of the container's own that happens to contain the word
+// --rm must reach the container intact.
 func (a *App) runInTwoSteps(ctx context.Context, o runOptions, create []string) error {
-	// --rm is the runtime's own flag on `run`; here the container outlives
-	// the create call, so it is removed once the session ends.
-	args := make([]string, 0, len(create))
-	for _, arg := range create[1:] {
-		if arg != "--rm" {
-			args = append(args, arg)
-		}
-	}
-	id, err := a.eng.Create(ctx, args...)
+	id, err := a.eng.Create(ctx, create[1:]...)
 	if err != nil {
 		return err
+	}
+	// A container that never starts is not removed by --rm, since nothing
+	// stopped, so the failure paths below clean up after themselves.
+	discard := func() {
+		if !o.remove {
+			return
+		}
+		if err := a.eng.Delete(ctx, []string{id}, true); err != nil {
+			a.warn("remove %s: %v", id, err)
+		}
 	}
 	a.refreshHosts(ctx)
 	if len(o.publish) > 0 {
@@ -421,16 +433,24 @@ func (a *App) runInTwoSteps(ctx context.Context, o runOptions, create []string) 
 	go a.refreshWhenRunning(watch, id)
 	code, err := a.eng.Attach(ctx, id, a.in, os.Stdout, os.Stderr, o.interactive)
 	if err != nil {
+		discard()
+		a.pruneHostsFiles(ctx)
 		return err
 	}
 	if o.remove {
-		if err := a.eng.Delete(ctx, []string{id}, true); err != nil {
-			a.warn("remove %s: %v", id, err)
-		}
 		a.pruneHostsFiles(ctx)
 	}
 	a.refreshHosts(ctx)
 	return exit(code)
+}
+
+// ensureImage pulls an image that is not in the local store, so a later step
+// does not have to wait for a download it cannot see.
+func (a *App) ensureImage(ctx context.Context, ref string) error {
+	if _, err := a.eng.InspectImage(ctx, ref); err == nil {
+		return nil
+	}
+	return a.runAttached(ctx, "image", "pull", ref)
 }
 
 // pullPolicy applies Docker's --pull before creating a container.

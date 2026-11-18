@@ -647,14 +647,11 @@ func TestAttachedRunOnUserNetworkStartsInTwoSteps(t *testing.T) {
 		t.Fatalf("a container with a hosts file must not hand the terminal to the runtime: %q", h.execd())
 	}
 	create := h.fake.Call("create")
-	if !strings.Contains(create, "--network app") || strings.Contains(create, "--rm") {
-		t.Fatalf("create must keep the network and drop --rm: %q", create)
+	if !strings.Contains(create, "--network app") || !strings.Contains(create, "--rm") {
+		t.Fatalf("create must keep the network and --rm, which the runtime honours itself: %q", create)
 	}
 	if !h.fake.Called("start --attach abc123") {
 		t.Fatalf("container must be started attached: %v", h.fake.Calls())
-	}
-	if !h.fake.Called("delete") {
-		t.Fatalf("--rm must remove the container afterwards: %v", h.fake.Calls())
 	}
 }
 
@@ -669,4 +666,54 @@ func TestRunWithoutUserNetworkKeepsExec(t *testing.T) {
 	if !strings.Contains(h.err.String(), "--network-alias is ignored") {
 		t.Fatalf("expected the alias warning:\n%s", h.err)
 	}
+}
+
+func TestTwoStepRunKeepsTheContainersOwnArguments(t *testing.T) {
+	h := newHarness(t)
+	h.fake.On("create", "abc123", 0)
+	// --rm belongs to the runtime here, and the trailing --rm belongs to the
+	// command inside the container. Both must survive.
+	if code := h.run("run", "--rm", "--network", "app", "alpine:3.20", "echo", "--rm"); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	create := h.fake.Call("create")
+	if !strings.HasSuffix(create, "alpine:3.20 echo --rm") {
+		t.Fatalf("the container's own --rm must reach it: %q", create)
+	}
+	if !strings.Contains(create, "create --rm ") {
+		t.Fatalf("the runtime removes the container itself, so --rm must be kept: %q", create)
+	}
+	if h.fake.Called("delete") {
+		t.Fatalf("a container the runtime removes must not be deleted twice: %v", h.fake.Calls())
+	}
+}
+
+func TestPublishedRunPullsBeforeStartingTheSupervisor(t *testing.T) {
+	h := newHarness(t)
+	h.fake.On("image inspect", "Error: not found", 1)
+	var spawned int
+	h.app.spawnFn = func(string, []string, string) (int, error) { spawned++; return 7, nil }
+	if code := h.run("run", "-p", "8080:80", "nginx:alpine"); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	calls := h.fake.Calls()
+	pull, run := indexOfCall(calls, "image pull nginx:alpine"), indexOfCall(calls, "run ")
+	if pull < 0 {
+		t.Fatalf("a missing image must be pulled first: %v", calls)
+	}
+	if run >= 0 && pull > run {
+		t.Fatalf("the pull must precede the run: %v", calls)
+	}
+	if spawned != 1 {
+		t.Fatalf("a published port must start the supervisor once, got %d", spawned)
+	}
+}
+
+func indexOfCall(calls []string, prefix string) int {
+	for i, c := range calls {
+		if strings.HasPrefix(c, prefix) {
+			return i
+		}
+	}
+	return -1
 }

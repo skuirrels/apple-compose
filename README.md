@@ -211,7 +211,7 @@ Global Docker flags (`-H`, `--context`, `--config`, `-l`, `--tls*`) are accepted
 
 | Variable | Effect |
 | --- | --- |
-| `APPLE_COMPOSE_DNS` | Comma-separated nameservers for every container and image build that sets none of its own. Unset, apple-compose probes the resolver the runtime puts on each network's gateway and, only when it is silent, supplies the Mac's own nameservers, or `1.1.1.1` and `8.8.8.8` when those are loopback proxies a container cannot reach. `runtime` keeps the runtime's resolver unconditionally. |
+| `APPLE_COMPOSE_DNS` | Comma-separated nameservers for every container and image build that sets none of its own. Unset, apple-compose first asks the runtime whether it has nameservers of its own, under `[container.dns]` in `~/.config/container/config.toml`, and leaves them alone if so. Otherwise it probes the resolver the runtime puts on each network's gateway and, only when that is silent, supplies the Mac's own nameservers, or `1.1.1.1` and `8.8.8.8` when those are loopback proxies a container cannot reach. `runtime` keeps the runtime's resolver unconditionally. |
 | `APPLE_COMPOSE_MEMORY` | Memory size, for example `4g`, for every container that sets no limit of its own. Unset, containers get half the Mac's memory with a 2 GB floor, since Docker imposes no limit and the runtime's 1 GB stops images such as SQL Server. A VM's memory is only committed as the guest uses it. `runtime` passes no flag. |
 | `APPLE_COMPOSE_CPUS` | CPU count for every container that sets no limit of its own. Unset, containers may use every CPU, as with Docker. `runtime` keeps the runtime's four. |
 | `APPLE_COMPOSE_IPV6_PORTS` | Set to `off` to stop answering published ports on IPv6. See [Published ports on IPv6](#published-ports-on-ipv6). |
