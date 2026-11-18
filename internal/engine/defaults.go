@@ -17,6 +17,16 @@ import (
 // apple-compose passes no flag and the runtime's own default applies.
 const RuntimeDefault = "runtime"
 
+// EnvIPv6Ports names the variable that, set to "off", publishes ports on IPv4
+// only.
+const EnvIPv6Ports = "APPLE_COMPOSE_IPV6_PORTS"
+
+// DualStackHost is the host address that publishes a port on both stacks. The
+// runtime binds an IPv6 socket for it, and macOS serves IPv4 clients through
+// the same socket, which is what Docker does for a port published without an
+// address.
+const DualStackHost = "[::]"
+
 // minDefaultMemory is the floor for the memory default. SQL Server, the most
 // demanding common image, refuses to start below two gigabytes.
 const minDefaultMemory = 2 << 30
@@ -28,6 +38,8 @@ var fallbackNameservers = []string{"1.1.1.1", "8.8.8.8"}
 // HostProbe is everything the defaults learn from the Mac, so tests can
 // substitute fixed answers.
 type HostProbe struct {
+	// IPv6 reports whether the host can bind an IPv6 socket.
+	IPv6 func() bool
 	// MemoryBytes is the host's physical memory.
 	MemoryBytes func() uint64
 	// CPUs is the host's logical CPU count.
@@ -40,7 +52,44 @@ type HostProbe struct {
 
 // hostProbe returns the real host probe.
 func hostProbe() HostProbe {
-	return HostProbe{MemoryBytes: hostMemoryBytes, CPUs: hostCPUs, DNSAnswers: dnsAnswers, Resolvers: hostResolvers}
+	return HostProbe{MemoryBytes: hostMemoryBytes, CPUs: hostCPUs, DNSAnswers: dnsAnswers, Resolvers: hostResolvers, IPv6: ipv6Available}
+}
+
+// PublishHostAddress returns the host address to publish a port on when the
+// user named none. It is the dual-stack address wherever that works, so a
+// client resolving localhost to ::1 is served as it would be by Docker, and
+// empty on a host without IPv6 or when the variable turns it off, which
+// leaves the runtime publishing on IPv4 alone.
+func (e *Engine) PublishHostAddress() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvIPv6Ports))) {
+	case "off", "0", "false", "no":
+		return ""
+	}
+	if e.NoHostDefaults {
+		return ""
+	}
+	e.dnsMu.Lock()
+	defer e.dnsMu.Unlock()
+	if e.ipv6 == nil {
+		available := e.probe().IPv6()
+		e.ipv6 = &available
+	}
+	if *e.ipv6 {
+		return DualStackHost
+	}
+	return ""
+}
+
+// ipv6Available reports whether an IPv6 socket can be bound at all. A host
+// with IPv6 disabled refuses the bind, and publishing there must fall back to
+// IPv4 rather than failing the whole command.
+func ipv6Available() bool {
+	ln, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
 }
 
 // DefaultMemory is the memory size given to a container that sets no limit.

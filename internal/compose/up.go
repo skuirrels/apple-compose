@@ -213,13 +213,8 @@ func (r *Runner) Up(ctx context.Context, o UpOptions) (int, error) {
 	if o.NoStart {
 		return 0, nil
 	}
-	// Attached sessions need the supervisor too: it forwards published
-	// ports over IPv6 while the containers run.
-	if err := r.EnsureSupervisor(ctx); err != nil {
-		r.Console.Warn("supervisor: %v", err)
-	}
 	if !attached {
-		return 0, nil
+		return 0, r.EnsureSupervisor(ctx)
 	}
 	return r.attachPhase(ctx, o, records, logs)
 }

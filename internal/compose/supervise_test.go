@@ -152,13 +152,10 @@ func TestUpClearsMarkersAndStartsSupervisor(t *testing.T) {
 }
 
 func TestUpWithoutPoliciesSpawnsNothing(t *testing.T) {
-	// The fake container publishes a port, which on its own needs the
-	// supervisor for IPv6; with forwarding off nothing is left to supervise.
-	t.Setenv(EnvIPv6Ports, "off")
 	r, f, _ := upFixture(t, "name: t\nservices:\n  a:\n    image: docker.io/library/alpine:3.20\n", "t-a-1")
 	f.On("ls --format json", "["+running("t-a-1", "a", "t", nil)+"]", 0)
 	r.SpawnSupervisor = func(string, []string, string) (int, error) {
-		t.Fatal("no restart policy and no IPv6 forwarding to supervise")
+		t.Fatal("no restart policy, so nothing to supervise")
 		return 0, nil
 	}
 	if _, err := r.Up(context.Background(), UpOptions{Detach: true}); err != nil {
@@ -303,23 +300,6 @@ func TestListProjectsHidesDockerPseudoProject(t *testing.T) {
 	}
 }
 
-func TestUpWithPublishedPortsStartsSupervisor(t *testing.T) {
-	t.Setenv(EnvIPv6Ports, "")
-	r, f, _ := upFixture(t, "name: t\nservices:\n  a:\n    image: docker.io/library/alpine:3.20\n", "t-a-1")
-	f.On("ls --format json", "["+running("t-a-1", "a", "t", nil)+"]", 0)
-	spawned := 0
-	r.SpawnSupervisor = func(string, []string, string) (int, error) {
-		spawned++
-		return 4243, nil
-	}
-	if _, err := r.Up(context.Background(), UpOptions{Detach: true}); err != nil {
-		t.Fatal(err)
-	}
-	if spawned != 1 {
-		t.Fatalf("a container publishing a port must start the supervisor for IPv6 forwarding, spawned %d", spawned)
-	}
-}
-
 func TestSuperviseWaitsOutItsGracePeriod(t *testing.T) {
 	r, _ := loadRunner(t, restartService, nil)
 	f := withFake(t, r)
@@ -374,20 +354,19 @@ func TestForegroundMarkerExpiresWithItsOwner(t *testing.T) {
 
 func TestKeepRunning(t *testing.T) {
 	cases := []struct {
-		name              string
-		active, forwarded int
-		seenWork          bool
-		waited, grace     time.Duration
-		want              bool
+		name          string
+		active        int
+		seenWork      bool
+		waited, grace time.Duration
+		want          bool
 	}{
-		{"a container to restart", 1, 0, true, time.Hour, time.Minute, true},
-		{"a port to forward", 0, 1, true, time.Hour, time.Minute, true},
-		{"work is done", 0, 0, true, 0, time.Minute, false},
-		{"waiting for the container it was launched for", 0, 0, false, time.Second, time.Minute, true},
-		{"nothing ever turned up", 0, 0, false, time.Minute, time.Minute, false},
+		{"a container to restart", 1, true, time.Hour, time.Minute, true},
+		{"work is done", 0, true, 0, time.Minute, false},
+		{"waiting for the container it was launched for", 0, false, time.Second, time.Minute, true},
+		{"nothing ever turned up", 0, false, time.Minute, time.Minute, false},
 	}
 	for _, c := range cases {
-		if got := keepRunning(c.active, c.forwarded, c.seenWork, c.waited, c.grace); got != c.want {
+		if got := keepRunning(c.active, c.seenWork, c.waited, c.grace); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}

@@ -49,17 +49,12 @@ type supervised struct {
 	settled bool
 }
 
-// Supervise is the project's background process. It has three jobs, all of
-// which need something alive for as long as the project is:
-//
-//   - restarting exited containers according to their restart policies, as
-//     Docker's daemon would;
-//   - answering published ports over IPv6, which the runtime does not do;
-//   - keeping the generated hosts files in step as containers come back.
-//
-// It returns when none of those has anything left to do. Containers stopped
-// by an apple-compose command carry a marker in the state directory and are
-// never restarted.
+// Supervise restarts exited containers of the project according to their
+// restart policies, as Docker's daemon would, and keeps the generated hosts
+// files in step as they come back. It returns when nothing is left to
+// supervise: every policy container is either gone, stopped on purpose, or
+// has exhausted its retries. Containers stopped by an apple-compose command
+// carry a marker in the state directory and are never restarted.
 func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 	if o.Interval <= 0 {
 		o.Interval = 2 * time.Second
@@ -69,12 +64,6 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 	}
 	started := time.Now()
 	seen := false
-	// IPv6 forwarding binds real ports, so single test passes skip it.
-	var forwarder *portForwarder
-	if ipv6PortsEnabled() && !o.Once {
-		forwarder = newPortForwarder(r.Console.Warn)
-		defer forwarder.close()
-	}
 	states := map[string]*supervised{}
 	var (
 		mu       sync.Mutex
@@ -89,12 +78,6 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 		cs, err := r.containers(ctx, true)
 		if err != nil {
 			return err
-		}
-		forwarded := 0
-		if forwarder != nil {
-			ports := forwardablePorts(cs)
-			forwarder.reconcile(ports)
-			forwarded = len(ports)
 		}
 		active := 0
 		for i := range cs {
@@ -159,8 +142,8 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 			// are not kept waiting for this one to boot.
 			go r.refreshWhenRunning(ctx, id, time.Now())
 		}
-		seen = seen || active > 0 || forwarded > 0 || len(states) > 0
-		if o.Once || !keepRunning(active, forwarded, seen, time.Since(started), o.Grace) {
+		seen = seen || active > 0 || len(states) > 0
+		if o.Once || !keepRunning(active, seen, time.Since(started), o.Grace) {
 			return nil
 		}
 		select {
@@ -176,8 +159,8 @@ func (r *Runner) Supervise(ctx context.Context, o SuperviseOptions) error {
 // period only until the first time it has seen work, which is what lets a
 // supervisor start just before the container it was launched for exists
 // without lingering once that container has come and gone.
-func keepRunning(active, forwarded int, seenWork bool, waited, grace time.Duration) bool {
-	if active > 0 || forwarded > 0 {
+func keepRunning(active int, seenWork bool, waited, grace time.Duration) bool {
+	if active > 0 {
 		return true
 	}
 	return !seenWork && waited < grace
@@ -231,9 +214,8 @@ func retriesExhausted(policy string, restarts int) bool {
 }
 
 // needsSupervisor reports whether a running container of the project carries
-// a restart policy or publishes a port that should also answer on IPv6.
-// Labels are consulted rather than the compose file so file-less commands
-// such as `start -p name` behave the same.
+// a restart policy. Labels are consulted rather than the compose file so
+// file-less commands such as `start -p name` behave the same.
 func (r *Runner) needsSupervisor(ctx context.Context) (bool, error) {
 	cs, err := r.containers(ctx, false)
 	if err != nil {
@@ -244,7 +226,7 @@ func (r *Runner) needsSupervisor(ctx context.Context) (bool, error) {
 			return true, nil
 		}
 	}
-	return ipv6PortsEnabled() && len(forwardablePorts(cs)) > 0, nil
+	return false, nil
 }
 
 // foregroundMarker records that an attached `up` session is looking after a
@@ -499,7 +481,7 @@ func (r *Runner) StartSupervisor(ctx context.Context) error {
 	}
 	pid, err := spawn(r.Project.Name, r.supervisorArgs(), logPath)
 	if err != nil {
-		r.Console.Warn("restart policies and IPv6 ports are not supervised: %v", err)
+		r.Console.Warn("restart policies are not supervised: %v", err)
 		return nil
 	}
 	r.Console.Step("Supervisor", fmt.Sprintf("%s (pid %d)", r.Project.Name, pid), "Started")

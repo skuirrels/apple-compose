@@ -208,7 +208,7 @@ func (r *Runner) createArgs(spec createSpec) ([]string, error) {
 	// Ports.
 	if !spec.noPorts {
 		for _, port := range s.Ports {
-			specs, err := publishSpecs(s.Name, port)
+			specs, err := publishSpecs(s.Name, port, r.Engine.PublishHostAddress())
 			if err != nil {
 				return nil, err
 			}
@@ -404,7 +404,7 @@ func megabytes(b int64) string {
 
 // publishSpecs expands one compose port entry, including ranges, into
 // runtime publish specs.
-func publishSpecs(service string, p types.ServicePortConfig) ([]string, error) {
+func publishSpecs(service string, p types.ServicePortConfig, defaultHost string) ([]string, error) {
 	if p.Published == "" {
 		return nil, fmt.Errorf("service %s: port %d has no published host port; the container runtime cannot assign ephemeral ports, so set `published`", service, p.Target)
 	}
@@ -427,11 +427,17 @@ func publishSpecs(service string, p types.ServicePortConfig) ([]string, error) {
 		}
 		lo, hi = port, port
 	}
+	host := hostIP
+	if host == "" {
+		// Docker answers an address-less publish on both stacks, so unless
+		// the user named one, so does this.
+		host = defaultHost
+	}
 	var out []string
 	for i := lo; i <= hi; i++ {
 		spec := fmt.Sprintf("%d:%d/%s", i, p.Target, proto)
-		if hostIP != "" {
-			spec = hostIP + ":" + spec
+		if host != "" {
+			spec = host + ":" + spec
 		}
 		out = append(out, spec)
 	}

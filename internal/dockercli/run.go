@@ -151,7 +151,7 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 		args = append(args, "--label", l)
 	}
 	for _, p := range o.publish {
-		spec, err := publishSpec(p)
+		spec, err := publishSpec(p, a.eng.PublishHostAddress())
 		if err != nil {
 			return nil, "", err
 		}
@@ -266,11 +266,6 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 			a.warn("--restart %s applies once the container runs detached; this attached session ends when it exits", o.restart)
 		}
 	}
-	if len(o.publish) > 0 && len(managed) == 0 {
-		// The supervisor forwards published ports over IPv6 and finds the
-		// containers it looks after through these labels.
-		managed = managedLabels(service)
-	}
 	hostsPath, hostsLabels, err := a.hostsFileFor(o)
 	if err != nil {
 		return nil, "", err
@@ -294,13 +289,17 @@ func (a *App) translateRun(cmd *cobra.Command, o runOptions, image string, comma
 	return args, hostsPath, nil
 }
 
-// publishSpec validates Docker's -p forms. The runtime shares the syntax
-// but cannot allocate ephemeral host ports.
-func publishSpec(p string) (string, error) {
+// publishSpec validates Docker's -p forms. The runtime shares the syntax but
+// cannot allocate ephemeral host ports. A publish with no address of its own
+// is given the dual-stack one, so it answers IPv6 clients as Docker's does.
+func publishSpec(p, defaultHost string) (string, error) {
 	spec, proto, _ := strings.Cut(p, "/")
 	parts := strings.Split(spec, ":")
 	if len(parts) < 2 {
 		return "", fmt.Errorf("-p %s: the container runtime cannot allocate a host port; use HOST:CONTAINER", p)
+	}
+	if len(parts) == 2 && defaultHost != "" {
+		spec = defaultHost + ":" + spec
 	}
 	if proto != "" {
 		return spec + "/" + proto, nil
@@ -333,8 +332,7 @@ func (a *App) runCommand() *cobra.Command {
 			if verb == "create" {
 				return a.runInTwoSteps(cmd.Context(), o, translated)
 			}
-			publishes := len(o.publish) > 0
-			supervised := o.detach && ((o.restart != "" && o.restart != "no") || publishes)
+			supervised := o.detach && o.restart != "" && o.restart != "no"
 			if supervised || (o.detach && hostsPath != "") {
 				// Stay in the process so hosts files and the supervisor can
 				// be brought up to date once the container is running.
@@ -348,16 +346,6 @@ func (a *App) runCommand() *cobra.Command {
 					a.ensureSupervisor(cmd.Context())
 				}
 				return nil
-			}
-			if publishes {
-				// The supervisor starts before this process becomes the
-				// runtime's, and waits a short while for the container to
-				// appear. A missing image is pulled first so that wait is
-				// not spent downloading.
-				if err := a.ensureImage(cmd.Context(), args[0]); err != nil {
-					return err
-				}
-				a.startSupervisor(cmd.Context())
 			}
 			return a.exec(translated...)
 		},
@@ -425,9 +413,6 @@ func (a *App) runInTwoSteps(ctx context.Context, o runOptions, create []string) 
 		}
 	}
 	a.refreshHosts(ctx)
-	if len(o.publish) > 0 {
-		a.startSupervisor(ctx)
-	}
 	watch, stop := context.WithCancel(ctx)
 	defer stop()
 	go a.refreshWhenRunning(watch, id)
@@ -442,15 +427,6 @@ func (a *App) runInTwoSteps(ctx context.Context, o runOptions, create []string) 
 	}
 	a.refreshHosts(ctx)
 	return exit(code)
-}
-
-// ensureImage pulls an image that is not in the local store, so a later step
-// does not have to wait for a download it cannot see.
-func (a *App) ensureImage(ctx context.Context, ref string) error {
-	if _, err := a.eng.InspectImage(ctx, ref); err == nil {
-		return nil
-	}
-	return a.runAttached(ctx, "image", "pull", ref)
 }
 
 // pullPolicy applies Docker's --pull before creating a container.

@@ -144,7 +144,7 @@ Containers `apple-docker run` creates on a user-defined network get the same tre
 
 ### Published ports on IPv6
 
-The runtime publishes ports on IPv4 only, while Docker answers on IPv6 too. A client that resolves `localhost` to `::1` and does not fall back to `127.0.0.1` is then refused. apple-compose closes the gap: while a container publishes a port on every address, its project's background supervisor listens on `[::]` for that port and relays each connection to the runtime's IPv4 listener, and it closes the listener when the container stops. Ports bound to a specific address such as `127.0.0.1:8080:80`, and UDP ports, are left as the runtime publishes them. `apple-docker run -p` gets the same forwarding.
+The runtime publishes a port on whichever host address it is given, and binds a dual-stack socket for `[::]`. apple-compose therefore publishes a port that names no address on `[::]`, so a client that resolves `localhost` to `::1` is served exactly as an IPv4 one is, which is what Docker does. A port bound to a specific address, such as `127.0.0.1:8080:80`, is passed through untouched. On a host without IPv6, and with `APPLE_COMPOSE_IPV6_PORTS=off`, ports are published on IPv4 alone. `apple-docker run -p` follows the same rule.
 
 ### Watch mode
 
@@ -214,7 +214,7 @@ Global Docker flags (`-H`, `--context`, `--config`, `-l`, `--tls*`) are accepted
 | `APPLE_COMPOSE_DNS` | Comma-separated nameservers for every container and image build that sets none of its own. Unset, apple-compose first asks the runtime whether it has nameservers of its own, under `[container.dns]` in `~/.config/container/config.toml`, and leaves them alone if so. Otherwise it probes the resolver the runtime puts on each network's gateway and, only when that is silent, supplies the Mac's own nameservers, or `1.1.1.1` and `8.8.8.8` when those are loopback proxies a container cannot reach. `runtime` keeps the runtime's resolver unconditionally. |
 | `APPLE_COMPOSE_MEMORY` | Memory size, for example `4g`, for every container that sets no limit of its own. Unset, containers get half the Mac's memory with a 2 GB floor, since Docker imposes no limit and the runtime's 1 GB stops images such as SQL Server. A VM's memory is only committed as the guest uses it. `runtime` passes no flag. |
 | `APPLE_COMPOSE_CPUS` | CPU count for every container that sets no limit of its own. Unset, containers may use every CPU, as with Docker. `runtime` keeps the runtime's four. |
-| `APPLE_COMPOSE_IPV6_PORTS` | Set to `off` to stop answering published ports on IPv6. See [Published ports on IPv6](#published-ports-on-ipv6). |
+| `APPLE_COMPOSE_IPV6_PORTS` | Set to `off` to publish ports on IPv4 only. See [Published ports on IPv6](#published-ports-on-ipv6). |
 | `CONTAINER_BIN` | Path to the `container` executable when it is not on `PATH`. |
 | `APPLE_COMPOSE_HOME` | State directory (default `~/Library/Application Support/apple-compose`). |
 | `COMPOSE_FILE`, `COMPOSE_PROJECT_NAME`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR` | Honoured as by Docker Compose. |

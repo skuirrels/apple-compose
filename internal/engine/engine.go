@@ -59,6 +59,8 @@ type Engine struct {
 	dnsByGateway map[string][]string
 	// runtimeDNS caches whether the runtime has nameservers of its own.
 	runtimeDNS *bool
+	// ipv6 caches whether this host can bind an IPv6 socket.
+	ipv6 *bool
 }
 
 // ExitError describes a `container` invocation that returned non-zero.

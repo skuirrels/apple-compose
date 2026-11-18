@@ -38,18 +38,28 @@ func TestProcessArgs(t *testing.T) {
 }
 
 func TestPublishSpecs(t *testing.T) {
-	specs, err := publishSpecs("web", types.ServicePortConfig{Target: 80, Published: "8080"})
+	specs, err := publishSpecs("web", types.ServicePortConfig{Target: 80, Published: "8080"}, "")
 	if err != nil || !reflect.DeepEqual(specs, []string{"8080:80/tcp"}) {
 		t.Fatalf("simple: %v %v", specs, err)
 	}
+	// Without an address of its own a port is published on both stacks, as
+	// Docker does; one the user pinned is left alone.
+	specs, err = publishSpecs("web", types.ServicePortConfig{Target: 80, Published: "8080"}, "[::]")
+	if err != nil || !reflect.DeepEqual(specs, []string{"[::]:8080:80/tcp"}) {
+		t.Fatalf("dual stack: %v %v", specs, err)
+	}
+	specs, err = publishSpecs("web", types.ServicePortConfig{Target: 80, Published: "8080", HostIP: "127.0.0.1"}, "[::]")
+	if err != nil || !reflect.DeepEqual(specs, []string{"127.0.0.1:8080:80/tcp"}) {
+		t.Fatalf("explicit address: %v %v", specs, err)
+	}
 	// A host range with a single target maps one free host port, as Docker
 	// does; compose-go expands equal-length ranges before we see them.
-	specs, err = publishSpecs("web", types.ServicePortConfig{Target: 5000, Published: "47130-47132", HostIP: "127.0.0.1", Protocol: "udp"})
+	specs, err = publishSpecs("web", types.ServicePortConfig{Target: 5000, Published: "47130-47132", HostIP: "127.0.0.1", Protocol: "udp"}, "")
 	want := []string{"127.0.0.1:47130:5000/udp"}
 	if err != nil || !reflect.DeepEqual(specs, want) {
 		t.Fatalf("range: %v %v", specs, err)
 	}
-	if _, err := publishSpecs("web", types.ServicePortConfig{Target: 80}); err == nil {
+	if _, err := publishSpecs("web", types.ServicePortConfig{Target: 80}, ""); err == nil {
 		t.Fatal("expected error for ephemeral host port")
 	}
 }

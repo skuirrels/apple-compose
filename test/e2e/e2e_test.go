@@ -213,7 +213,7 @@ volumes:
 `)
 	c := &cli{t: t, bin: bin, dir: dir}
 	out := c.must("--dry-run", "up", "-d")
-	for _, want := range []string{"network create", "volume create", "--publish 18555:80/tcp", "type=volume,source=e2edry_data,target=/data", "container start e2edry-web-1"} {
+	for _, want := range []string{"network create", "volume create", "--publish '[::]:18555:80/tcp'", "type=volume,source=e2edry_data,target=/data", "container start e2edry-web-1"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in dry-run output:\n%s", want, out)
 		}

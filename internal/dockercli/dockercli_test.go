@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/skuirrels/apple-compose/internal/compose"
+	"github.com/skuirrels/apple-compose/internal/engine"
 	"github.com/skuirrels/apple-compose/internal/enginetest"
 	"github.com/skuirrels/apple-compose/internal/state"
 	"github.com/skuirrels/apple-compose/internal/ui"
@@ -688,24 +689,49 @@ func TestTwoStepRunKeepsTheContainersOwnArguments(t *testing.T) {
 	}
 }
 
-func TestPublishedRunPullsBeforeStartingTheSupervisor(t *testing.T) {
+func TestPublishedPortIsOfferedOnBothStacks(t *testing.T) {
 	h := newHarness(t)
-	h.fake.On("image inspect", "Error: not found", 1)
+	h.app.eng.NoHostDefaults = false
+	h.app.eng.Probe = &engine.HostProbe{
+		MemoryBytes: func() uint64 { return 8 << 30 },
+		CPUs:        func() int { return 4 },
+		DNSAnswers:  func(string) bool { return true },
+		Resolvers:   func() []string { return nil },
+		IPv6:        func() bool { return true },
+	}
 	var spawned int
 	h.app.spawnFn = func(string, []string, string) (int, error) { spawned++; return 7, nil }
-	if code := h.run("run", "-p", "8080:80", "nginx:alpine"); code != 0 {
+	if code := h.run("run", "-d", "-p", "8080:80", "-p", "127.0.0.1:9000:90", "nginx:alpine"); code != 0 {
 		t.Fatalf("exit %d:\n%s", code, h.err)
 	}
-	calls := h.fake.Calls()
-	pull, run := indexOfCall(calls, "image pull nginx:alpine"), indexOfCall(calls, "run ")
-	if pull < 0 {
-		t.Fatalf("a missing image must be pulled first: %v", calls)
+	call := h.execd()
+	if !strings.Contains(call, "--publish [::]:8080:80") {
+		t.Fatalf("a port with no address must be published on both stacks: %q", call)
 	}
-	if run >= 0 && pull > run {
-		t.Fatalf("the pull must precede the run: %v", calls)
+	if !strings.Contains(call, "--publish 127.0.0.1:9000:90") {
+		t.Fatalf("a port the user pinned must be left alone: %q", call)
 	}
-	if spawned != 1 {
-		t.Fatalf("a published port must start the supervisor once, got %d", spawned)
+	if spawned != 0 {
+		t.Fatalf("the runtime publishes both stacks itself, so no supervisor is needed, spawned %d", spawned)
+	}
+}
+
+func TestIPv6PublishingCanBeTurnedOff(t *testing.T) {
+	h := newHarness(t)
+	h.app.eng.NoHostDefaults = false
+	h.app.eng.Probe = &engine.HostProbe{
+		MemoryBytes: func() uint64 { return 8 << 30 },
+		CPUs:        func() int { return 4 },
+		DNSAnswers:  func(string) bool { return true },
+		Resolvers:   func() []string { return nil },
+		IPv6:        func() bool { return true },
+	}
+	t.Setenv(engine.EnvIPv6Ports, "off")
+	if code := h.run("run", "-d", "-p", "8080:80", "nginx:alpine"); code != 0 {
+		t.Fatalf("exit %d:\n%s", code, h.err)
+	}
+	if call := h.execd(); !strings.Contains(call, "--publish 8080:80") || strings.Contains(call, "[::]") {
+		t.Fatalf("with IPv6 publishing off the port stays on IPv4: %q", call)
 	}
 }
 
